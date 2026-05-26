@@ -4,6 +4,7 @@ from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.api.routes import router
 from bosgenesis_mop_creation_agent.common.logging import configure_logging, get_logger
 from bosgenesis_mop_creation_agent.config.settings import Settings, load_settings
+from bosgenesis_mop_creation_agent.core.orchestrator import PhaseOneMoPCreationOrchestrator
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -17,6 +18,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="BOS Genesis MoP Creation Agent",
     )
     app.state.settings = app_settings
+    app.state.orchestrator = PhaseOneMoPCreationOrchestrator(app_settings)
     app.include_router(router)
 
     logger = get_logger(__name__)
@@ -29,4 +31,3 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     return app
-

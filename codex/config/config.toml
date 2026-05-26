@@ -1,0 +1,20 @@
+[projects.'c:\tmobile\genesis\agent-mop\bosgenesis-mop-creation-agent']
+trust_level = "trusted"
+
+[mcp_servers.bosgenesis_mop_creation]
+enabled = true
+url = "http://mop-creation-agent.bosgenesis.local/mcp"
+startup_timeout_sec = 20
+tool_timeout_sec = 180
+default_tools_approval_mode = "prompt"
+
+enabled_tools = [
+  "mop_creation_health",
+  "mop_creation_generate",
+  "mop_creation_get",
+  "mop_creation_latest",
+  "mop_creation_effective_config",
+]
+
+[mcp_servers.bosgenesis_mop_creation.tools.mop_creation_generate]
+approval_mode = "prompt"

@@ -1,0 +1,49 @@
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class TraceIds(BaseModel):
+    langfuse: str | None = None
+    signoz: str | None = None
+
+
+class ArtifactMetadata(BaseModel):
+    human_mop_pdf_path: str
+    installation_notes_path: str
+
+
+class MoPGenerationResponse(BaseModel):
+    status: str
+    mop_id: str
+    run_id: str
+    correlation_id: str
+    source_namespace: str
+    target_namespace: str
+    local_file_path: str
+    mongo_saved: bool = False
+    qdrant_reference_count: int = 0
+    qdrant_lookup_status: str = "not_executed"
+    resource_count: int = 0
+    helm_release_count: int = 0
+    excluded_resource_count: int = 0
+    warning_count: int = 0
+    trace_ids: TraceIds = Field(default_factory=TraceIds)
+    artifacts: ArtifactMetadata
+    warnings: list[str] = Field(default_factory=list)
+    created_at: datetime
+    content: str | None = None
+    installation_notes_content: str | None = None
+
+
+class McpToolDefinition(BaseModel):
+    name: str
+    description: str
+    input_schema: dict[str, Any]
+
+
+class McpToolResponse(BaseModel):
+    tool: str
+    result: dict[str, Any]
+

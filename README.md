@@ -21,11 +21,15 @@ The initial target is namespace-only, public-repository, Kubernetes-and-Helm bas
 
 ## Phase 0 runtime
 
-The current implementation is the foundation skeleton:
+The current implementation includes the Phase 0 foundation and Phase 1 API/MCP contract:
 
 - FastAPI application shell.
 - `GET /health`.
 - `GET /config/effective` with redaction.
+- `POST /mop-creation/generate` returning stub run and artifact metadata.
+- `GET /mop-creation/{mop_id}`.
+- `GET /mop-creation/latest`.
+- MCP-style contract tools for health, generate, get, latest, and effective config.
 - YAML/environment config loading.
 - JSON structured logging.
 - Dockerfile, Helm chart skeleton, `playbook/deploy.sh`, and `playbook/uninstaller.sh`.
@@ -50,6 +54,28 @@ With a custom ingress host:
 ```bash
 INGRESS_HOST=mop-creation-agent.bosgenesis.local IMAGE_REPOSITORY=<registry>/bosgenesis-mop-creation-agent IMAGE_TAG=<tag> ./playbook/deploy.sh
 ```
+
+Phase 1 REST contract test:
+
+```bash
+curl -X POST http://localhost:8080/mop-creation/generate \
+  -H "Content-Type: application/json" \
+  -d '{"target_namespace":"bosgenesis-copy-dev","caller":"curl","correlation_id":"demo-correlation"}'
+
+curl http://localhost:8080/mop-creation/latest
+```
+
+Phase 1 MCP-style contract test:
+
+```bash
+curl http://localhost:8080/mcp/tools
+
+curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":"1","method":"tools/call","params":{"name":"mop_creation_health","arguments":{}}}'
+```
+
+Phase 1 generation returns IDs, trace placeholders, and artifact paths only. It does not call Kubernetes, Helm, Qdrant, or datastore integrations yet.
 
 ## Safety posture
 
