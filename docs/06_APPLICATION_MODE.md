@@ -9,7 +9,7 @@ Application mode augments `platform-only` Kubernetes and Helm reconstruction wit
 
 Application mode is still a document-generation mode. The agent does not execute schema creation, copy data, mutate target systems, or perform migrations.
 
-In standalone mode, application-mode reasoning may use LangChain and the configured external LLM to infer schema/topology recreation guidance from redacted evidence. In Codex-integrated mode, Codex may iteratively refine the same guidance through the MCP surface.
+In standalone mode, application-mode reasoning may use LangGraph/LangChain and the configured external LLM to infer schema/topology recreation guidance from redacted evidence. In Codex-integrated mode, Codex may iteratively refine the same guidance through the MCP surface.
 
 ## 2. Scope
 
@@ -18,7 +18,7 @@ Application mode includes:
 - all `platform-only` output;
 - schema/topology discovery where approved evidence is available;
 - metadata-only recreation instructions;
-- metadata-only sections in both the human MoP and the agent-readable installation guide;
+- metadata-only sections in both the human MoP PDF and the Markdown installation notes;
 - validation commands or checks;
 - manual rollback guidance.
 
@@ -49,10 +49,13 @@ Application-mode evidence may come from:
 
 - explicitly provided read-only credentials;
 - approved MCP/data-ingestion boundaries;
+- Qdrant prior MoP/installation-note references for matching application components, when available;
 - PostgreSQL/ClickHouse/MongoDB/Redis/Kafka metadata collectors in future implementation;
 - ETL snapshot or analytical inventory when it already contains redacted metadata.
 
 The agent must prefer approved MCP or data-ingestion boundaries when available. Direct datastore access requires explicit read-only credentials and redaction controls.
+
+Qdrant references are optional prior guidance only. They may help explain how a component was previously installed, but they cannot replace direct metadata evidence for schema/topology output.
 
 ## 5. Credential Handling
 
@@ -88,7 +91,7 @@ Application metadata collection must happen after namespace/platform classificat
 
 ## 7. Output Requirements
 
-The generated human MoP and agent-readable guide must include an `Application Schema/Topology Recreation Steps` section when application mode is selected.
+The generated human MoP PDF and Markdown installation notes must include application schema/topology recreation guidance when application mode is selected. In the PDF this guidance belongs under `Deployment Execution`, `Validation`, `Go / No-Go`, and `Rollback Procedure` as appropriate; in the Markdown notes it may be a dedicated execution phase.
 
 That section must include:
 

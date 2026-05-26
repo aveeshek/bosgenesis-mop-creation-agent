@@ -5,11 +5,11 @@
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
 **Target namespace:** Provided at runtime  
-**Primary purpose:** Generate a human-executable Method of Procedure (MoP) and an LLM/agent-readable installation guide that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
+**Primary purpose:** Generate a human-executable Method of Procedure (MoP) PDF and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates a safe, line-by-line MoP with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. It also creates an LLM/agent-readable Markdown guide. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates a safe, line-by-line MoP PDF rendered from the approved sample-derived MoP template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangChain, GPT-4.1 mini or configured equivalent, and LangMem-backed short-term, episodic, and knowledge memory.
+The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, GPT-4.1 mini or configured equivalent, and LangMem-backed short-term, episodic, and knowledge memory.
 
 ## 1. Suggested Project Structure
 
@@ -52,17 +52,21 @@ bosgenesis-mop-creation-agent/
         resource_classifier.py
         helm_detector.py
         safety_classifier.py
+      retrieval/
+        qdrant_reference_finder.py
+        component_query_builder.py
+        reference_models.py
       rendering/
         mop_template.py
         mop_renderer.py
-        agent_guide_renderer.py
+        pdf_renderer.py
+        installation_notes_renderer.py
         command_builder.py
         manifest_normalizer.py
         markdown_writer.py
       persistence/
         local_storage.py
         mongodb_store.py
-        qdrant_indexer.py
         postgres_metadata_store.py
         clickhouse_metrics_store.py
       memory/
@@ -76,6 +80,7 @@ bosgenesis-mop-creation-agent/
         dependency_graph.py
         inference_labels.py
       llm/
+        langgraph_workflow.py
         langchain_flow.py
         model_gateway.py
         prompt_contracts.py
@@ -114,18 +119,22 @@ bosgenesis-mop-creation-agent/
 | `classification/resource_classifier.py` | Categorizes resources into Helm-managed, raw Kubernetes, excluded, and warning-only groups. |
 | `classification/helm_detector.py` | Detects Helm ownership from labels, annotations, release records, and rendered manifests. |
 | `classification/safety_classifier.py` | Applies resource safety policy before a command is generated. |
+| `retrieval/component_query_builder.py` | Builds component-level Qdrant lookup queries from Helm releases, labels, app names, image names, services, and application-mode metadata. |
+| `retrieval/qdrant_reference_finder.py` | Reads Qdrant for existing vectorized MoP/installation-note references and returns cited matches when enabled. |
+| `retrieval/reference_models.py` | Defines retrieved-reference metadata, score, component identity, source artifact, and citation fields. |
 | `rendering/manifest_normalizer.py` | Cleans manifests, redacts sensitive fields, and rewrites namespace. |
 | `rendering/command_builder.py` | Builds copyable Helm and Kubernetes command blocks. |
-| `rendering/mop_renderer.py` | Generates the Markdown MoP. |
-| `rendering/agent_guide_renderer.py` | Generates the LLM/agent-readable Markdown installation guide. |
+| `rendering/mop_renderer.py` | Builds the sample-derived human MoP document model. |
+| `rendering/pdf_renderer.py` | Renders the human MoP document model to PDF. |
+| `rendering/installation_notes_renderer.py` | Generates LLM/agent-readable Markdown installation notes. |
 | `persistence/local_storage.py` | Writes Markdown and generated snippets to PVC/local path. |
 | `persistence/mongodb_store.py` | Stores full MoP document and generation trace when enabled. |
-| `persistence/qdrant_indexer.py` | Indexes MoP chunks when enabled. |
 | `persistence/postgres_metadata_store.py` | Stores run and artifact metadata when enabled. |
 | `persistence/clickhouse_metrics_store.py` | Stores generation metrics when enabled. |
 | `memory/memory_router.py` | Coordinates optional Redis, pgvector, LangMem, and future Letta memory backends. |
 | `reasoning/planner.py` | Coordinates deterministic and LLM-assisted reasoning for install order, unknowns, and inference labels. |
-| `llm/langchain_flow.py` | Runs standalone REST-triggered autonomous reasoning through LangChain. |
+| `llm/langgraph_workflow.py` | Runs standalone REST-triggered autonomous reasoning as a LangGraph workflow with explicit state transitions and repair loops. |
+| `llm/langchain_flow.py` | Provides LangChain model, prompt, and tool adapter helpers used by the LangGraph workflow where useful. |
 | `llm/model_gateway.py` | Encapsulates GPT-4.1 mini or configured equivalent model access. |
 | `observability/langfuse_tracer.py` | Emits Langfuse traces for prompts, decisions, and generation phases. |
 | `observability/signoz_otel.py` | Emits OpenTelemetry spans and metrics for SigNoz. |
@@ -174,7 +183,7 @@ MoPGenerationRequest
 - include_validation_steps: bool
 - include_rollback_steps: bool
 - include_application_schema: bool
-- output_artifacts: list, default ["human_mop", "agent_guide"]
+- output_artifacts: list, default ["human_mop_pdf", "installation_notes"]
 - return_content: bool
 - caller: string
 - correlation_id: optional string
@@ -190,10 +199,10 @@ MoPGenerationResponse
 - source_namespace: string
 - target_namespace: string
 - status: string
-- file_path: string
-- agent_guide_file_path: string
+- human_mop_pdf_path: string
+- installation_notes_path: string
 - content: optional string
-- agent_guide_content: optional string
+- installation_notes_content: optional string
 - resource_count: integer
 - helm_release_count: integer
 - excluded_resource_count: integer
@@ -213,6 +222,7 @@ sequenceDiagram
     participant K as K8sMCPClient
     participant H as HelmMCPClient
     participant C as Classifier
+    participant Q as QdrantReader
     participant L as LLMReasoner
     participant N as Normalizer
     participant R as Renderer
@@ -226,9 +236,11 @@ sequenceDiagram
     O->>H: enrich helm state
     O->>C: classify resources
     C-->>O: helm-managed/raw/excluded/warning groups
-    O->>L: infer ambiguous install order, public repo/chart hints, and unknowns when needed
+    O->>Q: find prior MoP/installation-note references by component
+    Q-->>O: cited references or no-match warning
+    O->>L: infer ambiguous install order, public repo/chart hints, and unknowns using current evidence plus validated prior references when needed
     O->>N: sanitize and rewrite manifests
-    O->>R: render MoP markdown and agent guide
+    O->>R: render MoP PDF and installation notes
     O->>P: save local + optional stores
     O->>T: finish trace
     O-->>API: response
@@ -351,9 +363,9 @@ Supported initial targets:
 
 Application-mode collectors must use explicitly provided read-only credentials or approved MCP/data-ingestion boundaries. Schema values, records, messages, cache contents, and business data remain out of scope.
 
-## 9. Agent-Readable Guide Logic
+## 9. Installation Notes Logic
 
-The agent-readable guide is generated alongside the human MoP. It must contain:
+The Markdown installation notes are generated alongside the human MoP PDF. They must contain:
 
 - structured metadata;
 - execution phases;
@@ -365,15 +377,31 @@ The agent-readable guide is generated alongside the human MoP. It must contain:
 - inference labels and confidence;
 - required human inputs.
 
-The guide is intended for autonomous execution by another LLM/agent, but this agent still does not execute it.
+The notes are intended for autonomous execution by another LLM/agent, but this agent still does not execute them.
 
-## 10. Persistence Details
+## 10. Qdrant Reference Retrieval
+
+Qdrant is a read-only reference source for this agent. It may contain vectorized MoPs and installation notes produced by a separate ingestion agent.
+
+Lookup behavior:
+
+- derive component identities from Helm release names, chart refs, Kubernetes labels/annotations, app names, container images, service names, ingress hosts, and application-mode metadata;
+- query configured Qdrant collections with `top_k` and `min_score`;
+- accept only matches with artifact metadata, component identity, source namespace or environment context, score, and text reference;
+- redact retrieved content before prompts, logs, memory, and rendered artifacts;
+- cite accepted references in evidence sections and confidence rationale;
+- skip with a warning when Qdrant is disabled, unavailable, or has no component match;
+- never write, upsert, delete, re-embed, or ingest documents into Qdrant.
+
+Retrieved references are non-authoritative. Current namespace evidence from ETL snapshots and MCP enrichment remains the source of truth.
+
+## 11. Persistence Details
 
 Local storage is always enabled:
 
 ```text
-/data/mops/<file-name>.md
-/data/mops/<file-name>.agent.md
+/data/mops/<file-name>.pdf
+/data/mops/<file-name>.installation.md
 /data/mops/<mop-id>/generated/*.yaml
 /data/mops/<mop-id>/values/*.yaml
 /data/mops/<mop-id>/evidence/*.json
@@ -401,9 +429,9 @@ MongoDB document shape:
 }
 ```
 
-Qdrant chunk metadata should include `mop_id`, `run_id`, section name, resource kind/name when applicable, source namespace, target namespace, and evidence references.
+This agent does not persist generated chunks into Qdrant. Any Qdrant document metadata consumed by the retrieval layer should include component name, artifact type, source artifact ID, section name, environment/namespace context when known, embedding model/version, ingestion timestamp, and original evidence references.
 
-## 11. Error Handling
+## 12. Error Handling
 
 | Error | Behavior |
 |---|---|
@@ -413,14 +441,14 @@ Qdrant chunk metadata should include `mop_id`, `run_id`, section name, resource 
 | K8s MCP unavailable | Continue with stored snapshot and warning. |
 | Helm MCP unavailable | Generate raw Kubernetes MoP and warn that Helm section is incomplete. |
 | MongoDB unavailable | Continue; local file still returned. |
-| Qdrant unavailable | Continue; local file still returned. |
+| Qdrant unavailable | Continue without prior references; local file still returned and warning recorded. |
 | Redis unavailable | Continue without cache/idempotency lock if policy permits. |
 | LangMem unavailable | Continue without memory enrichment. |
 | External LLM unavailable in standalone mode | Return error unless deterministic-only fallback is explicitly allowed. |
 | Langfuse/SigNoz unavailable | Continue with local structured logs. |
 | Secret-like value detected in artifact | Fail validation and do not publish artifact. |
 
-## 12. Observability and Audit
+## 13. Observability and Audit
 
 Every run must emit structured phase events:
 
@@ -429,32 +457,37 @@ request_received
 read_latest_snapshot
 enrich_from_mcp
 classify_resources
+qdrant_reference_lookup
 normalize_manifests
-render_mop
+render_mop_pdf
+render_installation_notes
 persist_mop
 validate_artifact
 return_response
 llm_reasoning_started
 llm_reasoning_completed
-agent_guide_rendered
+installation_notes_rendered
 ```
 
 Each event must carry `run_id`, `correlation_id`, source namespace, target namespace, mode, caller, phase, status, latency, and error details when present.
 
-## 13. Tests
+## 14. Tests
 
 | Test | Expected |
 |---|---|
-| Generate MoP from sample snapshot | Markdown contains all required sections. |
+| Generate MoP from sample snapshot | PDF MoP contains all sample-derived required sections. |
 | Target namespace rewrite | All generated manifests use target namespace. |
 | Secret exclusion | Secrets and secret-like values are excluded or replaced with placeholders. |
 | Helm release section | Helm commands are generated when release data exists. |
 | Raw Kubernetes section | Supported non-Helm resources produce dry-run, apply, validate, and rollback notes. |
 | Unsupported resource exclusion | Unsafe resources appear as manual notes, not executable commands. |
 | Optional store disabled | Agent succeeds with local file only. |
+| Qdrant no-match | Agent skips prior references and still generates PDF MoP plus installation notes. |
+| Qdrant match | Accepted prior references are cited and do not override contradictory current evidence. |
+| Qdrant unavailable | Warning is recorded and generation continues when local storage succeeds. |
 | Trace disabled | Agent succeeds without Langfuse/SigNoz. |
-| Return content true | API returns Markdown content. |
+| Return content true | API returns Markdown installation notes content and PDF metadata. |
 | MCP unavailable fallback | Stored snapshot path returns warning instead of crashing when allowed. |
 | Application mode metadata only | Schema output contains no records, messages, or cache values. |
-| Agent-readable guide generated | `.agent.md` guide contains metadata, phases, dependency graph, validation, rollback, evidence, and unknowns. |
-| Standalone LLM path | LangChain/model gateway path records reasoning trace and handles model failure according to policy. |
+| Installation notes generated | `.installation.md` notes contain metadata, phases, dependency graph, validation, rollback, evidence, and unknowns. |
+| Standalone LLM path | LangGraph/LangChain/model gateway path records reasoning trace and handles model failure according to policy. |

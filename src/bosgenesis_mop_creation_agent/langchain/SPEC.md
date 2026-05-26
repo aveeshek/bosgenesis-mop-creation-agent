@@ -1,22 +1,20 @@
-# LangChain Workflow Specification
+# LangChain Adapter Specification
 
 ## Intent
 
-`langchain/` defines standalone REST-triggered autonomous orchestration using LangChain.
+`langchain/` defines model, prompt, and tool adapter helpers used by standalone reasoning.
 
-Codex-integrated MCP mode may bypass this workflow because Codex provides the reasoning loop.
+LangGraph owns the standalone workflow graph, state transitions, critique loops, and repair loops. LangChain should be used where it provides useful model/tool abstractions, not as the only orchestration layer.
 
-## Workflow stages
+Codex-integrated MCP mode may bypass these adapters when Codex provides the reasoning loop.
 
-1. Build redacted evidence summary.
-2. Retrieve relevant LangMem memory.
-3. Classify installation mechanisms.
-4. Build dependency graph.
-5. Reason about gaps, unknowns, public repository/chart hints, and order.
-6. Draft reasoning plan.
-7. Critique plan against policy and evidence.
-8. Repair plan when validation fails.
-9. Return accepted reasoning plan to core orchestration.
+## Adapter responsibilities
+
+1. Build prompt inputs from redacted evidence.
+2. Call the configured model gateway.
+3. Wrap tool/model calls for LangGraph nodes.
+4. Normalize model outputs.
+5. Return structured outputs to the LangGraph workflow.
 
 ## Inputs
 
@@ -37,5 +35,4 @@ Codex-integrated MCP mode may bypass this workflow because Codex provides the re
 
 ## Traceability
 
-Every LangChain step must be traceable in Langfuse and correlated with OpenTelemetry/SigNoz spans.
-
+Every LangChain-backed model/tool call must be traceable in Langfuse and correlated with OpenTelemetry/SigNoz spans.

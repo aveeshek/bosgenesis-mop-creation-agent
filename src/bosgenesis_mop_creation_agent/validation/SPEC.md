@@ -19,8 +19,8 @@
 - Rollback notes.
 - Unknowns explicitly listed.
 - Platform-only versus application-mode boundary compliance.
-- Human MoP section completeness.
-- Agent guide contract completeness.
+- Sample-derived human MoP PDF section completeness.
+- Markdown installation notes contract completeness.
 - Target namespace rewrite.
 - Blocked resource exclusion.
 
@@ -31,4 +31,3 @@ Validation failures for secret leakage, production data leakage, blocked executa
 ## Warning behavior
 
 Incomplete evidence, unavailable optional stores, unavailable optional MCPs, and unresolved unknowns may produce warnings when the output remains safe and explicitly labeled.
-

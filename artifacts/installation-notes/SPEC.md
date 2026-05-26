@@ -1,8 +1,8 @@
-# Agent Guide Artifact Specification
+# Installation Notes Artifact Specification
 
 ## Intent
 
-This folder will hold LLM/agent-readable Markdown installation guides.
+This folder will hold LLM/agent-readable Markdown installation notes.
 
 ## Required traits
 
@@ -11,5 +11,6 @@ This folder will hold LLM/agent-readable Markdown installation guides.
 - Idempotent commands.
 - Validation checkpoints.
 - Machine-friendly dependency ordering.
+- Evidence references and inference labels.
 - Explicit placeholders for secrets and human-provided inputs.
 

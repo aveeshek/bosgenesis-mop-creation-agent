@@ -5,11 +5,11 @@
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
 **Target namespace:** Provided at runtime  
-**Primary purpose:** Generate a human-executable Method of Procedure (MoP) and an LLM/agent-readable installation guide that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
+**Primary purpose:** Generate a human-executable Method of Procedure (MoP) PDF and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates a safe, line-by-line MoP with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. It also creates an agent-readable Markdown guide for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates a safe, line-by-line MoP PDF rendered from the approved sample-derived template, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. It also creates Markdown installation notes for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to refine output. In standalone REST mode, the agent uses LangChain, GPT-4.1 mini or configured equivalent, and LangMem-backed memory to reason about ambiguous next steps.
+The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to refine output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, GPT-4.1 mini or configured equivalent, and LangMem-backed memory to reason about ambiguous next steps.
 
 ## 1. High-Level Architecture
 
@@ -32,15 +32,18 @@ flowchart LR
 
     Orchestrator --> Classifier["Resource Classifier"]
     Orchestrator --> Reasoning["Reasoning Layer"]
-    Reasoning --> LangChain["LangChain Standalone Flow"]
+    Reasoning --> LangGraph["LangGraph Standalone Workflow"]
+    LangGraph --> LangChain["LangChain Model/Tool Adapters"]
     LangChain --> LLM["External LLM: GPT-4.1 mini"]
-    Classifier --> Reasoning
+    Classifier --> Retrieval["Qdrant Prior Reference Lookup"]
+    Retrieval --> Qdrant[("Qdrant Prior MoP/Notes Index")]
+    Ingestion["Separate Qdrant Ingestion Agent"] -. "writes vectorized MoPs/notes" .-> Qdrant
+    Retrieval --> Reasoning
     Reasoning --> Normalizer["Manifest Normalizer"]
-    Normalizer --> Renderer["MoP and Guide Renderer"]
+    Normalizer --> Renderer["MoP PDF and Installation Notes Renderer"]
 
     Renderer --> Local[("Local File Storage")]
     Renderer --> Mongo[("MongoDB MoP Store")]
-    Renderer --> Qdrant[("Qdrant MoP Index")]
 
     Orchestrator --> Obs["Observability Adapter"]
     Obs --> Langfuse["Langfuse"]
@@ -65,9 +68,10 @@ flowchart LR
 | Helm MCP Client | Validate Helm releases, values, manifests, and history using the existing Helm MCP. |
 | Resource Classifier | Split resources into Helm-managed, raw Kubernetes, excluded, and warning-only categories. |
 | Manifest Normalizer | Remove runtime metadata, redact sensitive fields, and rewrite namespace references for the target namespace. |
-| Reasoning Layer | Use deterministic rules first, then LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, and application-mode metadata guidance. |
-| MoP and Guide Renderer | Generate final human MoP and agent-readable Markdown guide. |
-| Persistence Layer | Save to local file, MongoDB, Qdrant, and metadata stores when enabled. |
+| Qdrant Retrieval Layer | Read existing vectorized MoP/installation notes for discovered components when enabled; return cited prior references or skip when no match exists. |
+| Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, and application-mode metadata guidance. |
+| MoP PDF and Installation Notes Renderer | Generate final human MoP PDF from the sample-derived template and Markdown installation notes for agents. |
+| Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Qdrant writes are out of scope for this agent. |
 | Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
 | Memory Layer | Save and retrieve generation patterns, previous MoPs, template decisions, short-term run state, episodic memory, and knowledge memory. |
 
@@ -81,7 +85,8 @@ sequenceDiagram
     participant CH as ClickHouse
     participant K as K8s MCP
     participant H as Helm MCP
-    participant M as MongoDB/Qdrant
+    participant Q as Qdrant
+    participant M as MongoDB/Metadata Stores
     participant O as Langfuse/SigNoz
 
     C->>A: POST /mop-creation/generate target_namespace
@@ -91,11 +96,13 @@ sequenceDiagram
     A->>K: validate latest namespace summary/resources
     A->>H: read Helm releases, values, manifests, history
     A->>A: classify resources
+    A->>Q: search prior vectorized MoPs/notes by component if enabled
+    Q-->>A: matching references or no-match
     A->>A: normalize manifests and rewrite target namespace
-    A->>A: reason over install order, unknowns, and public repo/chart evidence
-    A->>A: generate Markdown MoP and agent-readable guide
+    A->>A: reason over install order, unknowns, public repo/chart evidence, and cited prior references
+    A->>A: render sample-format MoP PDF and Markdown installation notes
     A->>A: write local file
-    A->>M: save MoP and index chunks if enabled
+    A->>M: save MoP metadata/document if enabled
     A->>O: end trace
     A-->>C: return file path, metadata, and optional content
 ```
@@ -105,7 +112,7 @@ sequenceDiagram
 Runtime invocation:
 
 - Codex-integrated MCP mode: Codex drives iterative generation, critique, and refinement.
-- Standalone REST mode: REST trigger starts an autonomous LangChain flow using GPT-4.1 mini or a configured equivalent model.
+- Standalone REST mode: REST trigger starts an autonomous LangGraph workflow using LangChain adapters, GPT-4.1 mini or a configured equivalent model.
 
 Generation:
 
@@ -161,6 +168,7 @@ flowchart TB
         CH[("ClickHouse")]
         MG[("MongoDB")]
         QD[("Qdrant")]
+        QI["Separate Qdrant Ingestion Agent"]
         LF["Langfuse"]
         SZ["SigNoz"]
     end
@@ -172,6 +180,7 @@ flowchart TB
     API --> CH
     API --> MG
     API --> QD
+    QI -.-> QD
     API --> LF
     API --> SZ
 ```
@@ -180,11 +189,11 @@ flowchart TB
 
 | Store | Purpose |
 |---|---|
-| Local file storage | Required output MoP file. |
+| Local file storage | Required output MoP PDF and Markdown installation notes. |
 | PostgreSQL | Read ETL latest snapshot and store request metadata when enabled. |
 | ClickHouse | Read analytical inventory and write generation metrics when enabled. |
 | MongoDB | Store full MoP document and raw generation trace. |
-| Qdrant | Store MoP chunks for future retrieval and analytics. |
+| Qdrant | Read-only retrieval of existing vectorized MoP/installation-note references for matching components. New ingestion/vectorization is performed by a separate agent. |
 | Redis | Optional short-lived cache and idempotency lock. |
 | pgvector | Optional semantic search alternative. |
 | LangMem | Optional memory extraction/update around MoP patterns. |
@@ -198,24 +207,30 @@ flowchart LR
     Trace --> S1["read_latest_snapshot"]
     Trace --> S2["enrich_from_mcp"]
     Trace --> S3["classify_resources"]
+    Trace --> S3b["qdrant_reference_lookup"]
     Trace --> S4["normalize_manifests"]
-    Trace --> S5["render_mop"]
+    Trace --> S5["render_mop_pdf"]
+    Trace --> S5b["render_installation_notes"]
     Trace --> S6["persist_mop"]
     Trace --> S7["return_response"]
 
     S1 --> LF["Langfuse"]
     S2 --> LF
     S3 --> LF
+    S3b --> LF
     S4 --> LF
     S5 --> LF
+    S5b --> LF
     S6 --> LF
     S7 --> LF
 
     S1 --> SZ["SigNoz"]
     S2 --> SZ
     S3 --> SZ
+    S3b --> SZ
     S4 --> SZ
     S5 --> SZ
+    S5b --> SZ
     S6 --> SZ
     S7 --> SZ
 ```
@@ -229,4 +244,5 @@ flowchart LR
 - Secret values must never be copied into generated MoPs. Secret creation steps must use placeholders or references to pre-existing secret material.
 - Runtime metadata, status fields, UIDs, resource versions, managed fields, pod names, and other non-recreatable state must be removed from generated manifests.
 - Excluded or unsafe resources must be documented as manual notes rather than converted into executable commands.
-- Agent-readable guides must not contain production data and must distinguish observed facts from inferred guidance.
+- Markdown installation notes must not contain production data and must distinguish observed facts from inferred guidance.
+- Qdrant references are prior guidance only. Retrieved content must be redacted, cited, confidence-scored, and validated against current namespace evidence before influencing output.

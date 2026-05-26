@@ -6,8 +6,8 @@
 
 The source tree must implement a read-only, non-executing, evidence-grounded MoP creation runtime that produces two primary artifacts:
 
-- human-executable MoP Markdown;
-- LLM/agent-readable installation guide Markdown.
+- human-executable MoP PDF rendered from the approved sample-derived template;
+- LLM/agent-readable Markdown installation notes.
 
 ## Package
 
@@ -35,11 +35,13 @@ bosgenesis_mop_creation_agent
 - `mcp_clients/`: governed upstream MCP access.
 - `collectors/`: evidence collection.
 - `evidence/`: normalized evidence bundles and citations.
+- `retrieval/`: read-only Qdrant prior-reference lookup for vectorized MoPs and installation notes.
 - `reasoning/`: deterministic and LLM-assisted planning.
 - `llm/`: external model access boundary.
-- `langchain/`: standalone autonomous reasoning workflow.
+- `langgraph/`: standalone autonomous reasoning graph and state transitions.
+- `langchain/`: model, prompt, and tool abstractions used by standalone reasoning.
 - `memory/`: LangMem and backing memory stores.
-- `documents/`: human MoP and agent-readable guide rendering.
+- `documents/`: human MoP PDF and Markdown installation notes rendering.
 - `application/`: application-mode schema/topology metadata.
 - `validation/`: artifact and plan validation gates.
 - `security/`: policy, redaction, and credential handling.
@@ -55,4 +57,3 @@ No source module may persist or emit secret values, production data, unredacted 
 ## Current constraint
 
 No source code is present in this scaffold. Future implementation should be added only after these module contracts are reviewed.
-

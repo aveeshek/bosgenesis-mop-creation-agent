@@ -5,7 +5,8 @@
 - Python service runtime in future implementation.
 - FastAPI for REST trigger and service endpoints.
 - Streamable HTTP MCP endpoint for Codex integration.
-- LangChain for standalone reasoning workflows.
+- LangGraph for standalone reasoning workflow graphs and state transitions.
+- LangChain for model, prompt, and tool abstractions where useful.
 - LangMem for agentic memory.
 
 ## LLM
@@ -34,4 +35,3 @@
 - MongoDB for flexible evidence bundles and episodic records.
 - ClickHouse for analytical event history.
 - LangMem as the memory abstraction layer.
-

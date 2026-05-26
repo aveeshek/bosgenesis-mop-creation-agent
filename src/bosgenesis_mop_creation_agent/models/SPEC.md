@@ -31,8 +31,8 @@
 
 Artifact models must represent:
 
-- human MoP;
-- agent-readable guide;
+- human MoP PDF;
+- Markdown installation notes;
 - generated manifest snippets;
 - Helm values snippets;
 - evidence appendix;
@@ -45,4 +45,3 @@ Models must support stable serialization so outputs can be hashed, compared, tra
 ## Safety
 
 Model safe-output methods must redact secrets and omit production data.
-

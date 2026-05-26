@@ -18,11 +18,12 @@ request_received
 read_latest_snapshot
 enrich_from_mcp
 classify_resources
+qdrant_reference_lookup
 llm_reasoning_started
 llm_reasoning_completed
 normalize_manifests
-render_mop
-agent_guide_rendered
+render_mop_pdf
+installation_notes_rendered
 validate_artifact
 persist_mop
 return_response
@@ -47,4 +48,3 @@ Every emitted event must carry:
 ## Safety
 
 Logs, traces, metrics, and audit records must be redacted and must not contain secret values or production data.
-

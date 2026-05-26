@@ -2,13 +2,12 @@
 
 ## Intent
 
-`persistence/` stores generated artifacts, metadata, metrics, and optional indexes.
+`persistence/` stores generated artifacts, metadata, and metrics.
 
 ## Future modules
 
 - `local_storage.py`
 - `mongodb_store.py`
-- `qdrant_indexer.py`
 - `postgres_metadata_store.py`
 - `clickhouse_metrics_store.py`
 
@@ -17,8 +16,8 @@
 Successful runs must write:
 
 ```text
-/data/mops/<file-name>.md
-/data/mops/<file-name>.agent.md
+/data/mops/<file-name>.pdf
+/data/mops/<file-name>.installation.md
 ```
 
 When snippets exist:
@@ -33,8 +32,7 @@ Local storage failure fails the run.
 
 ## Optional stores
 
-- MongoDB stores full redacted MoP/guide documents and generation trace.
-- Qdrant indexes redacted MoP/guide chunks.
+- MongoDB stores full redacted MoP text representation, installation notes, and generation trace.
 - PostgreSQL stores run and artifact metadata.
 - ClickHouse stores generation metrics and analytical events.
 
@@ -44,3 +42,4 @@ Optional store failures must produce warnings but may not fail the run when loca
 
 Persistence receives only validated and redacted content.
 
+Qdrant writes are explicitly out of scope for this package. Use `retrieval/` for read-only Qdrant prior-reference lookup.

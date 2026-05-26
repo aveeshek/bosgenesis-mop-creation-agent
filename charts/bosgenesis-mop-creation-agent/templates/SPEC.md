@@ -2,9 +2,8 @@
 
 ## Intent
 
-This folder will contain future Helm templates.
+This folder contains Helm templates for the Phase 0 runtime skeleton.
 
-## Initial constraint
+## Helm compatibility
 
-No templates are present during scaffold initialization.
-
+This file is excluded from Helm rendering through the chart-level `.helmignore`.

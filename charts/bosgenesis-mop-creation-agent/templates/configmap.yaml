@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-config
+  labels:
+    {{- include "bosgenesis-mop-creation-agent.labels" . | nindent 4 }}
+data:
+  settings.yaml: |
+{{ toYaml .Values.config | indent 4 }}
+

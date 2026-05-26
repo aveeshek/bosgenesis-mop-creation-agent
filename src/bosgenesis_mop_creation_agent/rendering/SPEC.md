@@ -2,24 +2,25 @@
 
 ## Intent
 
-`rendering/` converts validated evidence and accepted reasoning plans into Markdown artifacts and generated snippets.
+`rendering/` converts validated evidence and accepted reasoning plans into a sample-format MoP document model, PDF artifact, Markdown installation notes, and generated snippets.
 
 ## Future modules
 
 - `mop_template.py`
 - `mop_renderer.py`
-- `agent_guide_renderer.py`
+- `pdf_renderer.py`
+- `installation_notes_renderer.py`
 - `command_builder.py`
 - `manifest_normalizer.py`
 - `markdown_writer.py`
 
-## Human MoP output
+## Human MoP PDF output
 
-The human MoP renderer must produce the approved 17-section Markdown structure and copyable commands.
+The human MoP renderer must produce the approved sample-derived document model and PDF output with copyable commands, expected output blocks, STOP/rollback callouts, Go / No-Go table, execution log, and footer.
 
-## Agent guide output
+## Installation notes output
 
-The agent guide renderer must produce `.agent.md` Markdown with:
+The installation notes renderer must produce `.installation.md` Markdown with:
 
 - machine-readable metadata;
 - execution phases;
@@ -47,4 +48,3 @@ Rendered snippets must remove runtime metadata, rewrite namespace to target name
 ## Safety
 
 Rendering must fail if required artifact sections are missing or if secret/production data appears in output.
-

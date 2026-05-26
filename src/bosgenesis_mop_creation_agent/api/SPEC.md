@@ -42,7 +42,7 @@ mop_creation_effective_config
 - `include_validation_steps`: bool.
 - `include_rollback_steps`: bool.
 - `include_application_schema`: bool.
-- `output_artifacts`: list, default `["human_mop", "agent_guide"]`.
+- `output_artifacts`: list, default `["human_mop_pdf", "installation_notes"]`.
 - `return_content`: bool.
 - `caller`: string.
 - `correlation_id`: optional string.
@@ -57,9 +57,9 @@ Responses must include:
 - source namespace;
 - target namespace;
 - status;
-- human MoP file path;
-- agent guide file path;
-- optional content when requested;
+- human MoP PDF file path;
+- Markdown installation notes file path;
+- optional Markdown installation notes content when requested;
 - resource counts;
 - Helm release count;
 - excluded resource count;
@@ -75,4 +75,3 @@ Responses must include:
 - MCP is the Codex iterative refinement path.
 - Health/config responses must redact secrets.
 - API code must never call Kubernetes, Helm, databases, caches, or streams directly for evidence; it delegates to orchestration.
-

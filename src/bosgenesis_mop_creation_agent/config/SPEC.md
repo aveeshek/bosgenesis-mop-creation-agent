@@ -12,8 +12,9 @@
 - MCP dependency endpoints.
 - Snapshot store settings.
 - Local artifact storage.
-- Optional persistence/indexing stores.
-- LLM and LangChain settings.
+- Optional persistence stores.
+- Read-only Qdrant prior-reference retrieval settings.
+- LLM, LangGraph, and LangChain settings.
 - LangMem and memory backend settings.
 - Observability settings.
 - Security and redaction policy.
@@ -46,4 +47,3 @@ Effective configuration exposed through REST or MCP must redact:
 ## Validation
 
 Configuration validation must reject settings that violate v1 boundaries unless a future accepted spec explicitly expands scope.
-

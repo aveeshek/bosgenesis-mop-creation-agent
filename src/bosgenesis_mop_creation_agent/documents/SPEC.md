@@ -6,39 +6,36 @@
 
 ## Required artifact types
 
-- Human-readable MoP Markdown.
-- LLM/agent-readable installation guide Markdown.
+- Human-readable MoP PDF.
+- LLM/agent-readable Markdown installation notes.
 - Generated manifest snippets.
 - Generated Helm values snippets.
 - Evidence appendix.
 - Unknowns and required human inputs list.
 - Validation summary.
 
-## Human MoP contract
+## Human MoP PDF contract
 
-The human MoP must follow the 17-section output contract:
+The human MoP must be rendered to PDF using the approved sample-derived section order:
 
-1. Document Header
-2. Change Summary
-3. Source and Target Namespace Overview
+1. Title
+2. Document Header
+3. Change Summary
 4. Pre-change Checklist
-5. Access and Environment Verification
-6. Source Namespace Export/Reference Snapshot
-7. Target Namespace Preparation
-8. Secret Placeholder and Prerequisite Inputs
-9. Helm Release Recreation Steps
-10. Raw Kubernetes Resource Recreation Steps
-11. Application Schema/Topology Recreation Steps, when selected
-12. Validation Steps
-13. Go/No-Go Decision Points
-14. Rollback Procedure
-15. Post-change Activities
-16. Execution Log
-17. Appendix: Generated Manifests, Helm Values, Evidence, and Unknowns
+5. Access & Environment Verification
+6. Pre-change Backup
+7. Stakeholder Notification
+8. Deployment Execution
+9. Validation
+10. Go / No-Go Decision Points
+11. Rollback Procedure
+12. Post-Change Activities
+13. Execution Log
+14. Footer
 
-## Agent guide contract
+## Markdown installation notes contract
 
-The agent-readable guide must include:
+The agent-readable installation notes must include:
 
 - machine-readable metadata;
 - execution phases;
@@ -57,8 +54,8 @@ The agent-readable guide must include:
 Local storage paths:
 
 ```text
-/data/mops/<file-name>.md
-/data/mops/<file-name>.agent.md
+/data/mops/<file-name>.pdf
+/data/mops/<file-name>.installation.md
 /data/mops/<mop-id>/generated/*.yaml
 /data/mops/<mop-id>/values/*.yaml
 /data/mops/<mop-id>/evidence/*.json
@@ -67,4 +64,3 @@ Local storage paths:
 ## Rendering rule
 
 Documents must be deterministic once the evidence bundle and accepted reasoning plan are fixed.
-

@@ -12,9 +12,10 @@
 - Enrich with Kubernetes and Helm MCP evidence when enabled.
 - Merge evidence.
 - Classify resources.
+- Look up read-only Qdrant prior MoP/installation-note references for matching components when enabled.
 - Invoke deterministic and LLM-assisted reasoning.
 - Normalize manifests and Helm values.
-- Generate human MoP and agent-readable guide.
+- Generate human MoP PDF and Markdown installation notes.
 - Validate artifacts.
 - Persist local artifacts and optional stores.
 - Return summary and trace identifiers.
@@ -45,10 +46,12 @@ read snapshot
 enrich from MCP
 merge evidence
 classify resources
+lookup qdrant prior references
 reason over install order and unknowns
 normalize manifests and values
-render human MoP
-render agent guide
+render sample-format human MoP model
+render human MoP PDF
+render Markdown installation notes
 validate artifacts
 persist artifacts
 return response
@@ -60,5 +63,5 @@ return response
 - Local storage failure fails the request.
 - Secret or production-data leakage fails artifact publication.
 - Optional store failures continue with warnings.
+- Qdrant disabled, unavailable, or no-match conditions continue with warnings and no prior references.
 - External LLM failure in standalone mode fails unless deterministic-only fallback is explicitly enabled.
-

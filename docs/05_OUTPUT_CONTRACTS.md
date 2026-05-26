@@ -1,7 +1,7 @@
 # Output Contracts Specification
 
 **Document status:** Initial scaffold  
-**Applies to:** Human MoP, LLM/agent-readable installation guide, generated manifest/value snippets, metadata responses, and optional retrieval/index artifacts.
+**Applies to:** Human MoP PDF, LLM/agent-readable Markdown installation notes, generated manifest/value snippets, metadata responses, and optional retrieval references.
 
 ## 1. Purpose
 
@@ -16,27 +16,24 @@ Outputs must align with the SPEC, HLD, LLD, and algorithm design:
 - generated artifacts must be safe, traceable, reproducible, and free of secret values or production data;
 - inferred content must be labeled with confidence and rationale.
 
-## 2. Primary Human MoP Contract
+## 2. Primary Human MoP PDF Contract
 
-The human-readable MoP is the required primary artifact. It must be Markdown and must include these sections in order:
+The human-readable MoP is the required primary artifact. It must be delivered as PDF and must follow the approved sample-derived section order:
 
-1. Document Header
-2. Change Summary
-3. Source and Target Namespace Overview
+1. Title
+2. Document Header
+3. Change Summary
 4. Pre-change Checklist
-5. Access and Environment Verification
-6. Source Namespace Export/Reference Snapshot
-7. Target Namespace Preparation
-8. Secret Placeholder and Prerequisite Inputs
-9. Helm Release Recreation Steps
-10. Raw Kubernetes Resource Recreation Steps
-11. Application Schema/Topology Recreation Steps, when selected
-12. Validation Steps
-13. Go/No-Go Decision Points
-14. Rollback Procedure
-15. Post-change Activities
-16. Execution Log
-17. Appendix: Generated Manifests, Helm Values, Evidence, and Unknowns
+5. Access & Environment Verification
+6. Pre-change Backup
+7. Stakeholder Notification
+8. Deployment Execution
+9. Validation
+10. Go / No-Go Decision Points
+11. Rollback Procedure
+12. Post-Change Activities
+13. Execution Log
+14. Footer
 
 ## 3. Human MoP Section Requirements
 
@@ -44,25 +41,21 @@ The human-readable MoP is the required primary artifact. It must be Markdown and
 |---|---|
 | Document Header | `mop_id`, `run_id`, `correlation_id`, source namespace, target namespace, generation mode, generated timestamp, caller, snapshot ID/timestamp when known. |
 | Change Summary | What will be recreated, counts of Helm releases, raw Kubernetes resources, excluded resources, warnings, and application-mode targets if selected. |
-| Source and Target Namespace Overview | Source evidence source, target namespace intent, assumptions, and non-goals. |
 | Pre-change Checklist | Operator prerequisites, access checks, tool availability, context checks, and required approvals. |
 | Access and Environment Verification | Copyable commands to confirm Kubernetes/Helm context and target namespace readiness. |
-| Source Namespace Export/Reference Snapshot | Snapshot source, live MCP enrichment status, and evidence freshness. |
-| Target Namespace Preparation | Namespace creation or verification instructions, without automatic execution by the agent. |
-| Secret Placeholder and Prerequisite Inputs | Required secret names/keys or placeholders without secret values. |
-| Helm Release Recreation Steps | Values files, dry-run commands, install/upgrade commands, validation checks, and rollback notes. |
-| Raw Kubernetes Resource Recreation Steps | Generated manifest references, dry-run commands, apply commands, validation checks, and rollback notes. |
-| Application Schema/Topology Recreation Steps | Metadata-only schema/topic/keyspace recreation steps when `application` mode is selected. |
+| Pre-change Backup | Export/reference source manifests, Helm values, and evidence snapshots without exposing secrets. |
+| Stakeholder Notification | Placeholder notification text for start, rollback, and completion messages. |
+| Deployment Execution | Target namespace preparation, secret placeholders, Helm releases, raw Kubernetes resources, ingress, and application schema steps when selected. |
 | Validation Steps | Pod, deployment, service, ingress, Helm, PVC, and application-mode validation checks as applicable. |
 | Go/No-Go Decision Points | Explicit stop/continue checkpoints and failed-action guidance. |
 | Rollback Procedure | Helm uninstall, raw manifest delete, and cautious application-mode cleanup guidance. |
 | Post-change Activities | Documentation, trace/artifact retention, and handoff notes. |
 | Execution Log | Blank operator-fillable execution table. |
-| Appendix | Generated manifests, values files, evidence references, excluded resources, warnings, and unknowns. |
+| Footer | MoP generation metadata including source namespace, target namespace, run ID, and correlation ID. |
 
-## 4. Agent-Readable Installation Guide Contract
+## 4. Markdown Installation Notes Contract
 
-The agent-readable guide is the required second primary artifact. It must be Markdown and optimized for autonomous execution by another LLM/agent.
+The installation notes are the required second primary artifact. They must be Markdown and optimized for autonomous execution by another LLM/agent.
 
 It must include:
 
@@ -79,10 +72,10 @@ It must include:
 - unknowns and required human inputs;
 - explicit no-data-copy and no-secret constraints.
 
-The guide filename should use:
+The notes filename should use:
 
 ```text
-/data/mops/<file-name>.agent.md
+/data/mops/<file-name>.installation.md
 ```
 
 ## 5. Command Contract
@@ -120,8 +113,8 @@ If a chart reference, value, resource, or ordering decision is inferred rather t
 Local storage is mandatory. A successful run must produce:
 
 ```text
-/data/mops/<file-name>.md
-/data/mops/<file-name>.agent.md
+/data/mops/<file-name>.pdf
+/data/mops/<file-name>.installation.md
 ```
 
 When generated snippets exist, they must be referenced from the MoP and stored under:
@@ -152,7 +145,8 @@ source_namespace
 target_namespace
 local_file_path
 mongo_saved
-qdrant_saved
+qdrant_reference_count
+qdrant_lookup_status
 resource_count
 helm_release_count
 excluded_resource_count
@@ -161,8 +155,8 @@ trace_ids
 warnings
 created_at
 content, only when return_content is true
-artifacts.human_mop_path
-artifacts.agent_guide_path
+artifacts.human_mop_pdf_path
+artifacts.installation_notes_path
 ```
 
 Optional stores may fail without failing the run, but local storage failure must fail the request.
@@ -187,10 +181,13 @@ Every generated step must be grounded by at least one of:
 - Kubernetes Inspector MCP evidence;
 - Helm Manager MCP evidence;
 - Data Ingestion Agent evidence;
+- Qdrant prior MoP/installation-note references for matching components, when available;
 - application-mode metadata evidence;
 - explicitly labeled inference with confidence and rationale.
 
 Evidence references must appear in the appendix or inline where useful.
+
+Qdrant references must be labeled as prior references, not current observed facts. If no Qdrant match exists for a component, the agent records the no-match status and continues without that reference.
 
 ## 10. Safety Contract
 
@@ -204,11 +201,11 @@ The final MoP and generated snippets must not contain:
 
 Validation failure for secret leakage, blocked resources, or production data leakage must stop artifact publication.
 
-## 11. Optional Index and Store Contracts
+## 11. Optional Store and Retrieval Contracts
 
-MongoDB, Qdrant, PostgreSQL metadata, ClickHouse metrics, Redis, pgvector, and LangMem are optional.
+MongoDB, PostgreSQL metadata, ClickHouse metrics, Redis, pgvector, LangMem, and read-only Qdrant retrieval are optional.
 
-Optional persisted/indexed records must include:
+Optional persisted records must include:
 
 - `mop_id`;
 - `run_id`;
@@ -221,3 +218,15 @@ Optional persisted/indexed records must include:
 - trace identifiers where available.
 
 Optional stores must receive redacted content only.
+
+Qdrant retrieval records consumed by the agent must include:
+
+- component identity;
+- source artifact type, such as MoP PDF text or Markdown installation notes;
+- source artifact ID or URI;
+- match score;
+- section or chunk identifier;
+- ingestion timestamp when available;
+- citation text or reference key.
+
+The MoP Creation Agent must not write, upsert, delete, embed, or ingest Qdrant records. Qdrant ingestion is owned by a separate agent.

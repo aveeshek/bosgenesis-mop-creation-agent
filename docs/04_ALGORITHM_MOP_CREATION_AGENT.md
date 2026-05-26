@@ -5,11 +5,11 @@
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
 **Target namespace:** Provided at runtime  
-**Primary purpose:** Generate a human-executable Method of Procedure (MoP) and an LLM/agent-readable installation guide that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
+**Primary purpose:** Generate a human-executable Method of Procedure (MoP) PDF and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates a safe, line-by-line MoP with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. It also creates an LLM/agent-readable Markdown guide. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates a safe, line-by-line MoP PDF from the approved sample-derived template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangChain and the configured external LLM, initially GPT-4.1 mini, are used in standalone mode to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
+The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured external LLM, initially GPT-4.1 mini, are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
 
 ## 1. Core Algorithm
 
@@ -29,18 +29,19 @@ flowchart TD
     Helm --> Merge
 
     Merge --> Classify["Classify resources"]
-    Classify --> Normalize["Normalize manifests"]
+    Classify --> QdrantLookup["Lookup prior Qdrant MoP/notes references"]
+    QdrantLookup --> Normalize["Normalize manifests"]
     Normalize --> NeedReason{"Need LLM reasoning?"}
-    NeedReason -->|"Yes"| Reason["Reason with LangChain/LLM and memory"]
+    NeedReason -->|"Yes"| Reason["Reason with LangGraph/LangChain/LLM and memory"]
     NeedReason -->|"No"| AppMode{"Application mode?"}
     Reason --> AppMode
     AppMode -->|"Yes"| AppSchema["Collect schema/topology metadata only"]
     AppMode -->|"No"| Render
-    AppSchema --> Render["Render MoP and agent guide"]
+    AppSchema --> Render["Render MoP PDF and installation notes"]
 
     Render --> ValidateArtifact["Validate artifact safety and completeness"]
-    ValidateArtifact --> SaveLocal["Save local Markdown"]
-    SaveLocal --> OptionalStores["Save optional Mongo/Qdrant/metadata"]
+    ValidateArtifact --> SaveLocal["Save PDF and Markdown artifacts"]
+    SaveLocal --> OptionalStores["Save optional Mongo/metadata"]
     OptionalStores --> FinishTrace["Finish trace"]
     FinishTrace --> Response["Return response"]
 ```
@@ -80,12 +81,14 @@ function generate_mop(request):
         fail with clear no-source-data error
 
     classified = classify_inventory(inventory)
+    prior_references = lookup_qdrant_references(classified, inventory)
     reasoning_plan = build_deterministic_reasoning_plan(classified)
 
     if reasoning_plan.has_ambiguity and standalone_llm_enabled:
-        reasoning_plan = refine_with_langchain_llm(
+        reasoning_plan = refine_with_langgraph_llm(
             reasoning_plan,
             redacted_evidence,
+            prior_references,
             memory_context
         )
 
@@ -110,7 +113,7 @@ function generate_mop(request):
     else:
         schema_metadata = empty
 
-    mop_markdown = render_human_mop(
+    mop_document = render_sample_format_mop_model(
         request,
         inventory,
         helm_steps,
@@ -122,7 +125,9 @@ function generate_mop(request):
         warnings
     )
 
-    agent_guide_markdown = render_agent_guide(
+    mop_pdf = render_mop_pdf(mop_document)
+
+    installation_notes_markdown = render_installation_notes(
         request,
         inventory,
         reasoning_plan,
@@ -135,14 +140,14 @@ function generate_mop(request):
         warnings
     )
 
-    validate_no_secret_values(mop_markdown)
-    validate_no_secret_values(agent_guide_markdown)
-    validate_required_sections(mop_markdown)
-    validate_agent_guide_contract(agent_guide_markdown)
+    validate_no_secret_values(mop_document)
+    validate_no_secret_values(installation_notes_markdown)
+    validate_sample_mop_sections(mop_document)
+    validate_installation_notes_contract(installation_notes_markdown)
     validate_target_namespace_rewrite(normalized_manifests, target_namespace)
 
-    file_path = write_local_file(mop_id, mop_markdown)
-    agent_guide_path = write_agent_guide_file(mop_id, agent_guide_markdown)
+    file_path = write_pdf_file(mop_id, mop_pdf)
+    installation_notes_path = write_installation_notes_file(mop_id, installation_notes_markdown)
     save optional stores if enabled
 
     finish traces
@@ -235,7 +240,37 @@ flowchart TD
     Supported -->|"No"| Warn["Warning-only"]
 ```
 
-## 6. Manifest Normalization Algorithm
+## 6. Qdrant Prior Reference Lookup Algorithm
+
+```text
+function lookup_qdrant_references(classified, inventory):
+    if qdrant retrieval is disabled:
+        return empty references with status disabled
+
+    component_queries = build component queries from:
+        Helm release names and chart refs
+        app.kubernetes.io labels and Helm annotations
+        workload names and container image names
+        service names and ingress hosts
+        application-mode database/cache/stream component names
+
+    references = []
+    for each query:
+        matches = qdrant.search(collection, query, top_k, min_score)
+        for each match:
+            if match has component metadata, artifact source, score, and citation:
+                redacted = redact(match.text)
+                references.append(redacted match)
+
+    if no references:
+        emit warning qdrant_reference_not_found
+
+    return references
+```
+
+Qdrant references are prior installation knowledge only. They can inform reasoning and template wording, but they must not override current namespace evidence. The agent never writes to Qdrant; vectorization and ingestion are owned by a separate agent.
+
+## 7. Manifest Normalization Algorithm
 
 ```text
 function normalize(resource, target_namespace):
@@ -269,7 +304,7 @@ PersistentVolume
 CustomResourceDefinition
 ```
 
-## 7. Helm Recreation Algorithm
+## 8. Helm Recreation Algorithm
 
 ```mermaid
 flowchart TB
@@ -306,7 +341,7 @@ helm upgrade --install <release-name> <chart-ref> \
 
 If the chart reference cannot be proven from release metadata, repository metadata, or history, the generated MoP must mark it as inferred or unknown and require human confirmation.
 
-## 8. Raw Kubernetes Recreation Algorithm
+## 9. Raw Kubernetes Recreation Algorithm
 
 ```mermaid
 flowchart TB
@@ -325,7 +360,7 @@ kubectl apply -f generated/<kind>-<name>.yaml -n <target-namespace> --dry-run=se
 kubectl apply -f generated/<kind>-<name>.yaml -n <target-namespace>
 ```
 
-## 9. Application Mode Algorithm
+## 10. Application Mode Algorithm
 
 Application mode runs after platform inventory is merged and classified.
 
@@ -350,11 +385,14 @@ Initial supported targets:
 
 Application mode must not copy table rows, MongoDB documents, Kafka messages, Redis values, uploaded files, or any production data.
 
-## 10. Non-Deterministic Reasoning Algorithm
+## 11. Non-Deterministic Reasoning Algorithm
 
 ```text
-function refine_with_langchain_llm(plan, redacted_evidence, memory_context):
+function refine_with_langgraph_llm(plan, redacted_evidence, prior_references, memory_context):
+    initialize LangGraph state with plan, evidence, prior references, and memory context
+    run graph nodes for plan, critique, repair, and final validation
     prepare prompt with observed evidence only
+    include accepted Qdrant references as cited, non-authoritative prior guidance
     include public-repository-only constraint
     include namespace-only constraint
     include no-secret/no-data constraint
@@ -367,21 +405,24 @@ function refine_with_langchain_llm(plan, redacted_evidence, memory_context):
 
 LLM reasoning must never receive secret values or production data. Every prompt, response, inference, and validation result must be traced in Langfuse and correlated with SigNoz/OpenTelemetry spans.
 
-## 11. MoP and Agent Guide Rendering Algorithm
+## 12. MoP PDF and Installation Notes Rendering Algorithm
 
 ```mermaid
 flowchart LR
-    Header["Header Data"] --> Template["MoP Template"]
-    Summary["Inventory Summary"] --> Template
-    Prechecks["Pre-check Commands"] --> Template
-    Helm["Helm Steps"] --> Template
-    K8s["K8s Steps"] --> Template
-    App["Application Schema Steps"] --> Template
-    Validation["Validation Steps"] --> Template
-    Rollback["Rollback Steps"] --> Template
-    Appendix["Manifest and Evidence Appendix"] --> Template
-    Template --> Markdown["Final Markdown MoP"]
-    Template --> AgentGuide["Agent-readable Markdown Guide"]
+    Header["Document Header"] --> Template["Sample-Derived MoP Template"]
+    Summary["Change Summary"] --> Template
+    Checklist["Pre-change Checklist"] --> Template
+    Access["Access & Environment Verification"] --> Template
+    Backup["Pre-change Backup"] --> Template
+    Notify["Stakeholder Notification"] --> Template
+    Execute["Deployment Execution"] --> Template
+    Validate["Validation"] --> Template
+    Decision["Go / No-Go"] --> Template
+    Rollback["Rollback Procedure"] --> Template
+    Post["Post-Change Activities"] --> Template
+    Log["Execution Log"] --> Template
+    Template --> PDF["Final PDF MoP"]
+    Template --> Notes["Markdown Installation Notes"]
 ```
 
 The renderer must include:
@@ -395,10 +436,11 @@ The renderer must include:
 - rollback guidance;
 - excluded and manual resources;
 - evidence appendix;
+- cited Qdrant prior references when used;
 - execution log section for human operators.
-- structured execution phases and dependency graph for the agent-readable guide.
+- structured execution phases and dependency graph for the Markdown installation notes.
 
-## 12. Generated Command Ordering
+## 13. Generated Command Ordering
 
 1. Confirm source and target contexts.
 2. Confirm target namespace exists or create it manually.
@@ -412,7 +454,7 @@ The renderer must include:
 10. Run application-mode schema recreation steps when selected.
 11. Validate pods, deployments, services, ingress, Helm release status, and application schemas.
 
-## 13. Go/No-Go Logic
+## 14. Go/No-Go Logic
 
 | Checkpoint | Expected | Failed action |
 |---|---|---|
@@ -426,7 +468,7 @@ The renderer must include:
 | Ingress created | Host/path visible | Validate ingress controller. |
 | Application schema validation | Expected schemas/topics exist | Stop and investigate metadata recreation. |
 
-## 14. Rollback Generation Algorithm
+## 15. Rollback Generation Algorithm
 
 Rollback is written as human guidance, not executed by the agent.
 
@@ -450,7 +492,7 @@ kubectl delete namespace <target-namespace>
 
 Application-mode rollback must describe schema/topic cleanup cautiously and should default to manual review.
 
-## 15. Artifact Validation Algorithm
+## 16. Artifact Validation Algorithm
 
 ```text
 function validate_artifact(mop_markdown, manifests, target_namespace):
@@ -461,13 +503,15 @@ function validate_artifact(mop_markdown, manifests, target_namespace):
     assert excluded resources are not emitted as executable apply commands
     assert unknown chart references are marked
     assert application mode contains metadata only
-    assert agent guide contains structured phases and evidence references
+    assert PDF MoP contains sample-derived required sections
+    assert installation notes contain structured phases and evidence references
+    assert Qdrant references are cited and do not appear as observed current-state facts
     assert all inferred steps are labeled
 ```
 
 Validation failures for redaction, blocked resources, or production data leakage must fail the request before artifact publication.
 
-## 16. Observability Algorithm
+## 17. Observability Algorithm
 
 ```mermaid
 sequenceDiagram
@@ -483,12 +527,16 @@ sequenceDiagram
     A->>S: span mcp_enrichment
     A->>L: span classify_resources
     A->>S: span classify_resources
+    A->>L: span qdrant_reference_lookup
+    A->>S: span qdrant_reference_lookup
     A->>L: span normalize_manifests
     A->>S: span normalize_manifests
     A->>L: span llm_reasoning if needed
     A->>S: span llm_reasoning if needed
-    A->>L: span render_mop
-    A->>S: span render_mop
+    A->>L: span render_mop_pdf
+    A->>S: span render_mop_pdf
+    A->>L: span render_installation_notes
+    A->>S: span render_installation_notes
     A->>L: span persist_mop
     A->>S: span persist_mop
     A->>L: close trace with status
@@ -497,7 +545,7 @@ sequenceDiagram
 
 Every phase event must carry `run_id`, `correlation_id`, source namespace, target namespace, generation mode, caller, phase, status, latency, and error details when present.
 
-## 17. Failure Algorithm
+## 18. Failure Algorithm
 
 ```text
 if no inventory data:
@@ -508,6 +556,8 @@ else if local storage fails:
     fail request because local file is mandatory
 else if standalone mode requires LLM and model is unavailable:
     fail request unless deterministic-only fallback is enabled
+else if qdrant retrieval fails:
+    continue and add warning
 else if optional store fails:
     continue and add warning
 else if observability fails:
@@ -516,7 +566,7 @@ else:
     return success with warnings if any
 ```
 
-## 18. Future Enhancements
+## 19. Future Enhancements
 
 - Letta memory adapter enablement.
 - Human approval workflow before exposing final MoP.

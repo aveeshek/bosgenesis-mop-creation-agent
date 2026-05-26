@@ -2,15 +2,21 @@
 
 ## Intent
 
-This folder will hold generated human-readable Method of Procedure documents.
+This folder will hold generated human-readable Method of Procedure PDF documents.
 
 ## Required sections
 
-- Overview.
-- Preconditions.
-- Installation sequence.
-- Validation sequence.
-- Rollback sequence.
-- Evidence appendix.
-- Unknowns and required inputs.
-
+- Title.
+- Document Header.
+- Change Summary.
+- Pre-change Checklist.
+- Access & Environment Verification.
+- Pre-change Backup.
+- Stakeholder Notification.
+- Deployment Execution.
+- Validation.
+- Go / No-Go Decision Points.
+- Rollback Procedure.
+- Post-Change Activities.
+- Execution Log.
+- Footer.

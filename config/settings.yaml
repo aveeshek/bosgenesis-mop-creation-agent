@@ -1,0 +1,47 @@
+agent:
+  name: bosgenesis-mop-creation-agent
+  mode: on_demand
+  source_namespace: bosgenesis
+  local_storage_enabled: true
+  local_storage_path: /data/mops
+  default_generation_mode: platform-only
+  public_repositories_only: true
+
+api:
+  host: 0.0.0.0
+  port: 8080
+
+logging:
+  level: INFO
+  format: json
+
+mcp:
+  k8s_inspector:
+    enabled: true
+    endpoint: http://k8s-inspector.bosgenesis.local/mcp
+  helm_manager:
+    enabled: true
+    endpoint: http://helm-manager.bosgenesis.local/mcp
+  data_ingestion_agent:
+    enabled: true
+    endpoint: http://data-ingestion-agent.bosgenesis.local/mcp
+
+retrieval:
+  qdrant:
+    enabled: true
+    mode: read_only
+    endpoint: http://qdrant.bosgenesis.local:6333
+    collection: mop_installation_notes
+    top_k: 5
+    min_score: 0.72
+    ingestion_owned_by: separate-agent
+
+observability:
+  langfuse_enabled: true
+  signoz_enabled: true
+  otlp_endpoint: http://signoz-otel-collector.signoz:4317
+
+llm:
+  standalone_enabled: true
+  framework: langgraph-langchain
+  default_model: gpt-4.1-mini
