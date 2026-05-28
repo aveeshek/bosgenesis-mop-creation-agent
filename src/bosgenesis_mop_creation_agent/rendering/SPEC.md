@@ -4,6 +4,10 @@
 
 `rendering/` converts validated evidence and accepted reasoning plans into a sample-format MoP document model, PDF artifact, Markdown installation notes, and generated snippets.
 
+## Current modules
+
+- `artifact_writer.py`: Phase 3 local artifact writer that renders snapshot-backed human MoP markdown, PDF placeholder, installation notes markdown, and `artifact.json` metadata from the approved artifact templates.
+
 ## Future modules
 
 - `mop_template.py`

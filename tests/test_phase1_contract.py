@@ -1,11 +1,34 @@
+import json
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from bosgenesis_mop_creation_agent.api.app import create_app
-from bosgenesis_mop_creation_agent.config.settings import Settings
+from bosgenesis_mop_creation_agent.config.settings import AgentSettings, Settings
 
 
-def test_generate_get_and_latest_stub_response() -> None:
-    client = TestClient(create_app(Settings()))
+REQUIRED_HUMAN_MOP_SECTIONS = (
+    "Document Header",
+    "Change Summary",
+    "Pre-change Checklist",
+    "Access & Environment Verification",
+    "Pre-change Backup",
+    "Stakeholder Notification",
+    "Deployment Execution",
+    "Validation",
+    "Go / No-Go Decision Points",
+    "Rollback Procedure",
+    "Post-Change Activities",
+    "Execution Log",
+)
+
+
+def _settings(tmp_path: Path) -> Settings:
+    return Settings(agent=AgentSettings(local_storage_path=str(tmp_path)))
+
+
+def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
 
     response = client.post(
         "/mop-creation/generate",
@@ -19,19 +42,51 @@ def test_generate_get_and_latest_stub_response() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["status"] == "accepted"
+    assert payload["status"] == "generated"
     assert payload["correlation_id"] == "test-correlation-id"
     assert payload["run_id"]
     assert payload["mop_id"]
     assert payload["trace_ids"]["langfuse"].startswith("stub-langfuse-")
     assert payload["trace_ids"]["signoz"].startswith("stub-signoz-")
+    assert Path(payload["artifacts"]["run_directory_path"]).is_dir()
+    assert Path(payload["artifacts"]["artifact_manifest_path"]).is_file()
+    assert Path(payload["artifacts"]["human_mop_markdown_path"]).is_file()
+    assert Path(payload["artifacts"]["human_mop_pdf_path"]).is_file()
     assert payload["artifacts"]["human_mop_pdf_path"].endswith(".pdf")
+    assert Path(payload["artifacts"]["installation_notes_path"]).is_file()
     assert payload["artifacts"]["installation_notes_path"].endswith(".installation.md")
-    assert payload["installation_notes_content"].startswith("# Phase 1 Stub")
+    assert payload["content"].startswith("# MoP:")
+    assert payload["installation_notes_content"].startswith("---")
     assert payload["qdrant_lookup_status"] == "not_executed"
-    assert "Kubernetes, Helm, Qdrant, and datastore integrations were not invoked" in " ".join(
-        payload["warnings"]
+    assert "Kubernetes and Helm MCP integrations were not invoked" in " ".join(payload["warnings"])
+    assert "postgres_snapshot_read_failed" in " ".join(payload["warnings"])
+    assert "clickhouse_snapshot_read_failed" in " ".join(payload["warnings"])
+    assert "snapshot_inventory_missing" in " ".join(payload["warnings"])
+    assert payload["resource_count"] == 0
+    assert payload["helm_release_count"] == 0
+
+    human_mop = Path(payload["artifacts"]["human_mop_markdown_path"]).read_text(encoding="utf-8")
+    installation_notes = Path(payload["artifacts"]["installation_notes_path"]).read_text(
+        encoding="utf-8"
     )
+    pdf_bytes = Path(payload["artifacts"]["human_mop_pdf_path"]).read_bytes()
+    manifest = json.loads(
+        Path(payload["artifacts"]["artifact_manifest_path"]).read_text(encoding="utf-8")
+    )
+
+    assert pdf_bytes.startswith(b"%PDF-1.4")
+    assert manifest["mop_id"] == payload["mop_id"]
+    assert manifest["external_calls"] == {
+        "kubernetes": False,
+        "helm": False,
+        "qdrant": False,
+        "datastores": True,
+    }
+    for section in REQUIRED_HUMAN_MOP_SECTIONS:
+        assert section in human_mop
+    assert "artifact_type: installation_notes" in installation_notes
+    assert "phase_id: install_helm_releases" in installation_notes
+    assert "step_id:" in installation_notes
 
     mop_id = payload["mop_id"]
     get_response = client.get(f"/mop-creation/{mop_id}")
@@ -51,8 +106,8 @@ def test_latest_returns_404_before_generation() -> None:
     assert response.status_code == 404
 
 
-def test_mcp_tool_contract_lists_and_invokes_tools() -> None:
-    client = TestClient(create_app(Settings()))
+def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
 
     tools_response = client.get("/mcp/tools")
 
@@ -73,10 +128,11 @@ def test_mcp_tool_contract_lists_and_invokes_tools() -> None:
 
     assert generate_response.status_code == 200
     result = generate_response.json()["result"]
-    assert result["status"] == "accepted"
+    assert result["status"] == "generated"
     assert result["run_id"]
     assert result["correlation_id"]
     assert result["target_namespace"] == "bosgenesis-copy-dev"
+    assert Path(result["artifacts"]["human_mop_pdf_path"]).is_file()
 
 
 def test_mcp_json_rpc_tools_call() -> None:

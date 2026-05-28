@@ -79,6 +79,16 @@ config:
       top_k: 5
       min_score: 0.72
       ingestion_owned_by: separate-agent
+  inventory:
+    postgres:
+      enabled: true
+      schema_name: k8s_ingestion
+    clickhouse:
+      enabled: true
+      host: clickhouse.bosgenesis.svc.cluster.local
+      port: 8123
+      user: bosgenesis
+      database: bosgenesis_k8s_ingestion
   observability:
     langfuse_enabled: true
     signoz_enabled: true
@@ -92,3 +102,18 @@ persistence:
   enabled: true
   size: 1Gi
   storageClassName: ""
+
+inventoryConfig:
+  postgresEnabled: "true"
+  postgresSchema: "k8s_ingestion"
+  clickhouseEnabled: "true"
+  clickhouseHost: "clickhouse.bosgenesis.svc.cluster.local"
+  clickhousePort: "8123"
+  clickhouseUser: "bosgenesis"
+  clickhouseDatabase: "bosgenesis_k8s_ingestion"
+
+secret:
+  create: false
+  name: bosgenesis-mop-creation-agent-secret
+  postgresDsn: ""
+  clickhousePassword: ""

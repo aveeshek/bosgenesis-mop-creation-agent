@@ -2,7 +2,7 @@ from typing import Any
 
 from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.config.settings import Settings
-from bosgenesis_mop_creation_agent.core.orchestrator import PhaseOneMoPCreationOrchestrator
+from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.models.responses import McpToolDefinition
 
@@ -16,12 +16,12 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
         ),
         McpToolDefinition(
             name="mop_creation_generate",
-            description="Create a Phase 1 stub MoP generation response.",
+            description="Create Phase 3 snapshot-backed local MoP artifacts.",
             input_schema=MoPGenerationRequest.model_json_schema(),
         ),
         McpToolDefinition(
             name="mop_creation_get",
-            description="Get a stub MoP generation response by mop_id.",
+            description="Get a MoP generation response by mop_id.",
             input_schema={
                 "type": "object",
                 "properties": {"mop_id": {"type": "string"}},
@@ -31,7 +31,7 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
         ),
         McpToolDefinition(
             name="mop_creation_latest",
-            description="Get the latest stub MoP generation response.",
+            description="Get the latest MoP generation response.",
             input_schema={"type": "object", "properties": {}, "additionalProperties": False},
         ),
         McpToolDefinition(
@@ -46,7 +46,7 @@ def call_mcp_tool(
     tool_name: str,
     arguments: dict[str, Any],
     settings: Settings,
-    orchestrator: PhaseOneMoPCreationOrchestrator,
+    orchestrator: MoPCreationOrchestrator,
 ) -> dict[str, Any]:
     if tool_name == "mop_creation_health":
         return {
@@ -72,4 +72,3 @@ def call_mcp_tool(
     if tool_name == "mop_creation_effective_config":
         return settings.redacted_dict()
     raise KeyError(tool_name)
-

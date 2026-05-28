@@ -10,6 +10,9 @@ class TraceIds(BaseModel):
 
 
 class ArtifactMetadata(BaseModel):
+    run_directory_path: str
+    artifact_manifest_path: str
+    human_mop_markdown_path: str
     human_mop_pdf_path: str
     installation_notes_path: str
 
@@ -25,6 +28,9 @@ class MoPGenerationResponse(BaseModel):
     mongo_saved: bool = False
     qdrant_reference_count: int = 0
     qdrant_lookup_status: str = "not_executed"
+    inventory_source: str | None = None
+    source_snapshot_id: str | None = None
+    snapshot_sources_attempted: list[str] = Field(default_factory=list)
     resource_count: int = 0
     helm_release_count: int = 0
     excluded_resource_count: int = 0
@@ -46,4 +52,3 @@ class McpToolDefinition(BaseModel):
 class McpToolResponse(BaseModel):
     tool: str
     result: dict[str, Any]
-

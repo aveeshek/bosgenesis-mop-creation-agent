@@ -6,7 +6,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-SECRET_KEYS = ("password", "secret", "token", "key", "credential", "connection_string")
+SECRET_KEYS = ("password", "secret", "token", "key", "credential", "connection_string", "dsn")
 
 
 class AgentSettings(BaseModel):
@@ -54,6 +54,26 @@ class RetrievalSettings(BaseModel):
     qdrant: QdrantRetrievalSettings = Field(default_factory=QdrantRetrievalSettings)
 
 
+class InventoryPostgresSettings(BaseModel):
+    enabled: bool = True
+    dsn: str | None = None
+    schema_name: str = "k8s_ingestion"
+
+
+class InventoryClickHouseSettings(BaseModel):
+    enabled: bool = True
+    host: str = "clickhouse.bosgenesis.svc.cluster.local"
+    port: int = 8123
+    user: str = "bosgenesis"
+    password: str | None = None
+    database: str = "bosgenesis_k8s_ingestion"
+
+
+class InventorySettings(BaseModel):
+    postgres: InventoryPostgresSettings = Field(default_factory=InventoryPostgresSettings)
+    clickhouse: InventoryClickHouseSettings = Field(default_factory=InventoryClickHouseSettings)
+
+
 class ObservabilitySettings(BaseModel):
     langfuse_enabled: bool = True
     signoz_enabled: bool = True
@@ -72,6 +92,7 @@ class Settings(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    inventory: InventorySettings = Field(default_factory=InventorySettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     llm: LlmSettings = Field(default_factory=LlmSettings)
 
@@ -117,13 +138,30 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "BOSGENESIS_MOP_API_PORT": ("api", "port"),
         "BOSGENESIS_MOP_LOG_LEVEL": ("logging", "level"),
         "BOSGENESIS_MOP_LOG_FORMAT": ("logging", "format"),
+        "POSTGRES_ENABLED": ("inventory", "postgres", "enabled"),
+        "POSTGRES_DSN": ("inventory", "postgres", "dsn"),
+        "POSTGRES_SCHEMA": ("inventory", "postgres", "schema_name"),
+        "CLICKHOUSE_ENABLED": ("inventory", "clickhouse", "enabled"),
+        "CLICKHOUSE_HOST": ("inventory", "clickhouse", "host"),
+        "CLICKHOUSE_PORT": ("inventory", "clickhouse", "port"),
+        "CLICKHOUSE_USER": ("inventory", "clickhouse", "user"),
+        "CLICKHOUSE_PASSWORD": ("inventory", "clickhouse", "password"),
+        "CLICKHOUSE_DATABASE": ("inventory", "clickhouse", "database"),
     }
     for env_name, path in env_map.items():
         env_value = os.getenv(env_name)
         if env_value is None:
             continue
         parent = update[path[0]]
-        value: Any = int(env_value) if env_name.endswith("_PORT") else env_value
-        parent[path[1]] = value
+        for nested_key in path[1:-1]:
+            parent = parent[nested_key]
+        value: Any
+        if env_name.endswith("_PORT"):
+            value = int(env_value)
+        elif env_name.endswith("_ENABLED"):
+            value = env_value.lower() in {"1", "true", "yes", "on"}
+        else:
+            value = env_value
+        parent[path[-1]] = value
 
     return Settings.model_validate(update)

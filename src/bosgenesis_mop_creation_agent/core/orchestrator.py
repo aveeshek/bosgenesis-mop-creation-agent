@@ -8,13 +8,22 @@ from bosgenesis_mop_creation_agent.models.responses import (
     MoPGenerationResponse,
     TraceIds,
 )
+from bosgenesis_mop_creation_agent.rendering.artifact_writer import LocalArtifactWriter
+from bosgenesis_mop_creation_agent.sources.clickhouse_snapshot_reader import ClickHouseSnapshotReader
+from bosgenesis_mop_creation_agent.sources.postgres_snapshot_reader import PostgresSnapshotReader
+from bosgenesis_mop_creation_agent.sources.snapshot_selector import SnapshotSelector
 
 
-class PhaseOneMoPCreationOrchestrator:
-    """Phase 1 contract orchestrator with no external system calls."""
+class MoPCreationOrchestrator:
+    """Phase 3 orchestrator with stored snapshot reading and no live cluster calls."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        self._artifact_writer = LocalArtifactWriter(settings.agent.local_storage_path)
+        self._snapshot_selector = SnapshotSelector(
+            postgres_reader=PostgresSnapshotReader(settings.inventory.postgres),
+            clickhouse_reader=ClickHouseSnapshotReader(settings.inventory.clickhouse),
+        )
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._latest_mop_id: str | None = None
 
@@ -24,29 +33,40 @@ class PhaseOneMoPCreationOrchestrator:
         run_id = str(uuid4())
         correlation_id = request.correlation_id or str(uuid4())
         created_at = datetime.now(UTC)
-        file_stem = f"mop-{source_namespace}-to-{request.target_namespace}-{created_at:%Y%m%dT%H%M%SZ}"
-        base_path = self._settings.agent.local_storage_path.rstrip("/")
-
-        human_mop_pdf_path = f"{base_path}/{file_stem}.pdf"
-        installation_notes_path = f"{base_path}/{file_stem}.installation.md"
         warnings = [
-            "phase1_stub_response: no MoP artifacts are generated yet",
-            "phase1_no_external_calls: Kubernetes, Helm, Qdrant, and datastore integrations were not invoked",
+            "phase3_no_live_kubernetes: Kubernetes and Helm MCP integrations were not invoked",
         ]
+        snapshot_result = self._snapshot_selector.read(source_namespace, request.source_snapshot_id)
+        warnings.extend(snapshot_result.warnings)
+        inventory = snapshot_result.inventory
+        artifact_result = self._artifact_writer.write(
+            mop_id=mop_id,
+            run_id=run_id,
+            correlation_id=correlation_id,
+            source_namespace=source_namespace,
+            request=request,
+            created_at=created_at,
+            warnings=warnings,
+            inventory=inventory,
+            snapshot_sources_attempted=snapshot_result.sources_attempted,
+        )
 
         response = MoPGenerationResponse(
-            status="accepted",
+            status="generated",
             mop_id=mop_id,
             run_id=run_id,
             correlation_id=correlation_id,
             source_namespace=source_namespace,
             target_namespace=request.target_namespace,
-            local_file_path=human_mop_pdf_path,
+            local_file_path=artifact_result.human_mop_pdf_path,
             mongo_saved=False,
             qdrant_reference_count=0,
             qdrant_lookup_status="not_executed",
-            resource_count=0,
-            helm_release_count=0,
+            inventory_source=inventory.source if inventory else None,
+            source_snapshot_id=inventory.snapshot_id if inventory else request.source_snapshot_id,
+            snapshot_sources_attempted=snapshot_result.sources_attempted,
+            resource_count=inventory.resource_count if inventory else 0,
+            helm_release_count=inventory.helm_release_count if inventory else 0,
             excluded_resource_count=0,
             warning_count=len(warnings),
             trace_ids=TraceIds(
@@ -54,15 +74,16 @@ class PhaseOneMoPCreationOrchestrator:
                 signoz=f"stub-signoz-{run_id}",
             ),
             artifacts=ArtifactMetadata(
-                human_mop_pdf_path=human_mop_pdf_path,
-                installation_notes_path=installation_notes_path,
+                run_directory_path=artifact_result.run_directory_path,
+                artifact_manifest_path=artifact_result.artifact_manifest_path,
+                human_mop_markdown_path=artifact_result.human_mop_markdown_path,
+                human_mop_pdf_path=artifact_result.human_mop_pdf_path,
+                installation_notes_path=artifact_result.installation_notes_path,
             ),
             warnings=warnings,
             created_at=created_at,
-            installation_notes_content=(
-                "# Phase 1 Stub Installation Notes\n\n"
-                "No installation notes are generated in Phase 1."
-            )
+            content=artifact_result.human_mop_content if request.return_content else None,
+            installation_notes_content=artifact_result.installation_notes_content
             if request.return_content
             else None,
         )
@@ -79,3 +100,5 @@ class PhaseOneMoPCreationOrchestrator:
             return None
         return self._responses[self._latest_mop_id]
 
+
+PhaseOneMoPCreationOrchestrator = MoPCreationOrchestrator

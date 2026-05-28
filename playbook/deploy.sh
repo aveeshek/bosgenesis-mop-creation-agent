@@ -21,6 +21,7 @@ DEPLOY_METHOD="${DEPLOY_METHOD:-helm}"
 HELM_RELEASE="${HELM_RELEASE:-bosgenesis-mop-creation-agent}"
 HELM_CHART="${HELM_CHART:-charts/bosgenesis-mop-creation-agent}"
 HELM_VALUES_FILE="${HELM_VALUES_FILE:-}"
+DEFAULT_HELM_CREDENTIALS_FILE="${HELM_CHART}/values.credentials.yaml"
 KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-deploy/k8s}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 SKIP_IMAGE_TRANSFER="${SKIP_IMAGE_TRANSFER:-false}"
@@ -34,6 +35,7 @@ SIGNOZ_ENABLED="${SIGNOZ_ENABLED:-true}"
 QDRANT_RETRIEVAL_ENABLED="${QDRANT_RETRIEVAL_ENABLED:-true}"
 SOURCE_NAMESPACE="${SOURCE_NAMESPACE:-bosgenesis}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
+SECRET_NAME="${SECRET_NAME:-bosgenesis-mop-creation-agent-secret}"
 
 log() {
   printf '\n[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -71,6 +73,7 @@ adopt_existing_helm_resources() {
 
   log "Checking for existing non-Helm resources to adopt"
   adopt_helm_resource configmap "${DEPLOYMENT_NAME}-config"
+  adopt_helm_resource secret "${SECRET_NAME}"
   adopt_helm_resource persistentvolumeclaim "${DEPLOYMENT_NAME}-mops"
   adopt_helm_resource service "${DEPLOYMENT_NAME}"
   adopt_helm_resource deployment "${DEPLOYMENT_NAME}"
@@ -121,6 +124,11 @@ kubectl get namespace "${NAMESPACE}" >/dev/null 2>&1 || kubectl create namespace
 
 if [ "${DEPLOY_METHOD}" = "helm" ]; then
   ROLLOUT_TIMESTAMP="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  if [ -z "${HELM_VALUES_FILE}" ] && [ -f "${DEFAULT_HELM_CREDENTIALS_FILE}" ]; then
+    HELM_VALUES_FILE="${DEFAULT_HELM_CREDENTIALS_FILE}"
+    log "Using Helm credentials values file ${HELM_VALUES_FILE}"
+  fi
+
   log "Deploying with Helm release ${HELM_RELEASE}"
   adopt_existing_helm_resources
 

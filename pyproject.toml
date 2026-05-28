@@ -9,7 +9,9 @@ description = "BOS Genesis MoP Creation Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "clickhouse-connect>=0.8",
   "fastapi>=0.110",
+  "psycopg[binary]>=3.2",
   "pydantic>=2",
   "PyYAML>=6",
   "uvicorn[standard]>=0.27",
@@ -35,4 +37,3 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-

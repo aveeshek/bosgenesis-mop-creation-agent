@@ -7,7 +7,7 @@ from bosgenesis_mop_creation_agent.api.mcp import call_mcp_tool, mcp_creation_to
 from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.common.logging import get_logger
 from bosgenesis_mop_creation_agent.config.settings import Settings
-from bosgenesis_mop_creation_agent.core.orchestrator import PhaseOneMoPCreationOrchestrator
+from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.models.responses import (
     McpToolResponse,
@@ -22,7 +22,7 @@ def _settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def _orchestrator(request: Request) -> PhaseOneMoPCreationOrchestrator:
+def _orchestrator(request: Request) -> MoPCreationOrchestrator:
     return request.app.state.orchestrator
 
 
@@ -55,11 +55,11 @@ def effective_config(request: Request) -> dict[str, Any]:
 @router.post("/mop-creation/generate", response_model=MoPGenerationResponse)
 def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGenerationResponse:
     logger.info(
-        "mop_generation_stub_requested",
+        "mop_generation_requested",
         extra={
             "caller": request_body.caller,
             "target_namespace": request_body.target_namespace,
-            "phase": "phase1_contract",
+            "phase": "phase3_snapshot_reader",
             "external_calls": "disabled",
         },
     )

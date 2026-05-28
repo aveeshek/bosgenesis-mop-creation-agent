@@ -7,4 +7,10 @@ metadata:
 data:
   settings.yaml: |
 {{ toYaml .Values.config | indent 4 }}
-
+  POSTGRES_ENABLED: {{ .Values.inventoryConfig.postgresEnabled | quote }}
+  POSTGRES_SCHEMA: {{ .Values.inventoryConfig.postgresSchema | quote }}
+  CLICKHOUSE_ENABLED: {{ .Values.inventoryConfig.clickhouseEnabled | quote }}
+  CLICKHOUSE_HOST: {{ .Values.inventoryConfig.clickhouseHost | quote }}
+  CLICKHOUSE_PORT: {{ .Values.inventoryConfig.clickhousePort | quote }}
+  CLICKHOUSE_USER: {{ .Values.inventoryConfig.clickhouseUser | quote }}
+  CLICKHOUSE_DATABASE: {{ .Values.inventoryConfig.clickhouseDatabase | quote }}

@@ -16,10 +16,21 @@ def test_health_endpoint_returns_runtime_metadata() -> None:
     assert payload["source_namespace"] == "bosgenesis"
     assert payload["runtime_mode"] == "on_demand"
 
+    config_response = client.get("/config/effective")
+    config = config_response.json()
+    assert config["inventory"]["postgres"]["enabled"] is True
+    assert config["inventory"]["clickhouse"]["enabled"] is True
+
 
 def test_effective_config_is_redacted() -> None:
     settings = Settings.model_validate(
         {
+            "inventory": {
+                "postgres": {
+                    "enabled": True,
+                    "dsn": "postgresql://user:super-secret-password@example.invalid/db",
+                }
+            },
             "mcp": {
                 "k8s_inspector": {
                     "enabled": True,
@@ -35,5 +46,5 @@ def test_effective_config_is_redacted() -> None:
     assert response.status_code == 200
     text = response.text
     assert "do-not-emit" not in text
+    assert "super-secret-password" not in text
     assert "***REDACTED***" in text
-

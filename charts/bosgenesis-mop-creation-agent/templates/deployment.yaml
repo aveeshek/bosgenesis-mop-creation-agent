@@ -31,6 +31,12 @@ spec:
           env:
             - name: BOSGENESIS_MOP_CONFIG_PATH
               value: /app/config/settings.yaml
+          envFrom:
+            - configMapRef:
+                name: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-config
+            - secretRef:
+                name: {{ .Values.secret.name }}
+                optional: true
           livenessProbe:
             httpGet:
               path: /health
@@ -60,4 +66,3 @@ spec:
             claimName: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-mops
         - name: tmp
           emptyDir: {}
-
