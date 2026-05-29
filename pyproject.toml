@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
   "clickhouse-connect>=0.8",
   "fastapi>=0.110",
+  "mcp>=1.13",
   "psycopg[binary]>=3.2",
   "pydantic>=2",
   "PyYAML>=6",

@@ -73,7 +73,6 @@ class SnapshotSelector:
 
         warnings.append(
             "snapshot_inventory_missing: generated artifacts contain no discovered resources; "
-            "live Kubernetes fallback is disabled in Phase 3"
+            "continuing to governed MCP enrichment"
         )
         return SnapshotReadResult(warnings=warnings, sources_attempted=attempted)
-

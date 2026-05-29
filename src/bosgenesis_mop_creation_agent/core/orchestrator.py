@@ -8,6 +8,10 @@ from bosgenesis_mop_creation_agent.models.responses import (
     MoPGenerationResponse,
     TraceIds,
 )
+from bosgenesis_mop_creation_agent.mcp_clients.data_ingestion_client import DataIngestionClient
+from bosgenesis_mop_creation_agent.mcp_clients.enrichment import McpEnrichmentService
+from bosgenesis_mop_creation_agent.mcp_clients.helm_manager_client import HelmManagerClient
+from bosgenesis_mop_creation_agent.mcp_clients.k8s_inspector_client import K8sInspectorClient
 from bosgenesis_mop_creation_agent.rendering.artifact_writer import LocalArtifactWriter
 from bosgenesis_mop_creation_agent.sources.clickhouse_snapshot_reader import ClickHouseSnapshotReader
 from bosgenesis_mop_creation_agent.sources.postgres_snapshot_reader import PostgresSnapshotReader
@@ -15,7 +19,7 @@ from bosgenesis_mop_creation_agent.sources.snapshot_selector import SnapshotSele
 
 
 class MoPCreationOrchestrator:
-    """Phase 3 orchestrator with stored snapshot reading and no live cluster calls."""
+    """Orchestrate stored snapshots plus governed MCP live enrichment."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -23,6 +27,11 @@ class MoPCreationOrchestrator:
         self._snapshot_selector = SnapshotSelector(
             postgres_reader=PostgresSnapshotReader(settings.inventory.postgres),
             clickhouse_reader=ClickHouseSnapshotReader(settings.inventory.clickhouse),
+        )
+        self._mcp_enrichment = McpEnrichmentService(
+            k8s_client=K8sInspectorClient.from_settings(settings.mcp.k8s_inspector),
+            helm_client=HelmManagerClient.from_settings(settings.mcp.helm_manager),
+            data_ingestion_client=DataIngestionClient.from_settings(settings.mcp.data_ingestion_agent),
         )
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._latest_mop_id: str | None = None
@@ -33,12 +42,16 @@ class MoPCreationOrchestrator:
         run_id = str(uuid4())
         correlation_id = request.correlation_id or str(uuid4())
         created_at = datetime.now(UTC)
-        warnings = [
-            "phase3_no_live_kubernetes: Kubernetes and Helm MCP integrations were not invoked",
-        ]
+        warnings: list[str] = []
         snapshot_result = self._snapshot_selector.read(source_namespace, request.source_snapshot_id)
         warnings.extend(snapshot_result.warnings)
-        inventory = snapshot_result.inventory
+        enrichment_result = self._mcp_enrichment.enrich(
+            namespace=source_namespace,
+            correlation_id=correlation_id,
+            snapshot_inventory=snapshot_result.inventory,
+        )
+        warnings.extend(enrichment_result.warnings)
+        inventory = enrichment_result.inventory
         artifact_result = self._artifact_writer.write(
             mop_id=mop_id,
             run_id=run_id,
@@ -49,6 +62,7 @@ class MoPCreationOrchestrator:
             warnings=warnings,
             inventory=inventory,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
+            mcp_sources_attempted=enrichment_result.sources_attempted,
         )
 
         response = MoPGenerationResponse(
@@ -65,6 +79,7 @@ class MoPCreationOrchestrator:
             inventory_source=inventory.source if inventory else None,
             source_snapshot_id=inventory.snapshot_id if inventory else request.source_snapshot_id,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
+            mcp_sources_attempted=enrichment_result.sources_attempted,
             resource_count=inventory.resource_count if inventory else 0,
             helm_release_count=inventory.helm_release_count if inventory else 0,
             excluded_resource_count=0,

@@ -16,7 +16,7 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
         ),
         McpToolDefinition(
             name="mop_creation_generate",
-            description="Create Phase 3 snapshot-backed local MoP artifacts.",
+            description="Create snapshot-backed and MCP-enriched local MoP artifacts.",
             input_schema=MoPGenerationRequest.model_json_schema(),
         ),
         McpToolDefinition(

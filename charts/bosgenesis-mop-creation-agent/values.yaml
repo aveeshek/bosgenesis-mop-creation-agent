@@ -9,6 +9,9 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+proxy:
+  noProxy: "localhost,127.0.0.1,.svc,.svc.cluster.local,bosgenesis-k8s-inspector-mcp,bosgenesis-helm-manager-mcp,bosgenesis-k8s-data-ingestion-agent"
+
 service:
   type: ClusterIP
   port: 8080
@@ -63,13 +66,16 @@ config:
   mcp:
     k8s_inspector:
       enabled: true
-      endpoint: http://k8s-inspector.bosgenesis.local/mcp
+      endpoint: http://bosgenesis-k8s-inspector-mcp.bosgenesis.svc.cluster.local:8080/mcp
+      host_header: k8s-inspector.bosgenesis.local
     helm_manager:
       enabled: true
-      endpoint: http://helm-manager.bosgenesis.local/mcp
+      endpoint: http://bosgenesis-helm-manager-mcp.bosgenesis.svc.cluster.local:8080/mcp
+      host_header: helm-manager.bosgenesis.local
     data_ingestion_agent:
       enabled: true
-      endpoint: http://data-ingestion-agent.bosgenesis.local/mcp
+      endpoint: http://bosgenesis-k8s-data-ingestion-agent.bosgenesis.svc.cluster.local:8080/mcp
+      host_header: data-ingestion-agent.bosgenesis.local
   retrieval:
     qdrant:
       enabled: true

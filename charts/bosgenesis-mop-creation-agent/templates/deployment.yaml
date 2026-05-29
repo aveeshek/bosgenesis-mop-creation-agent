@@ -31,6 +31,10 @@ spec:
           env:
             - name: BOSGENESIS_MOP_CONFIG_PATH
               value: /app/config/settings.yaml
+            - name: NO_PROXY
+              value: {{ .Values.proxy.noProxy | quote }}
+            - name: no_proxy
+              value: {{ .Values.proxy.noProxy | quote }}
           envFrom:
             - configMapRef:
                 name: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-config

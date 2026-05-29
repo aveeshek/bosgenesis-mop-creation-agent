@@ -31,6 +31,7 @@ class MoPGenerationResponse(BaseModel):
     inventory_source: str | None = None
     source_snapshot_id: str | None = None
     snapshot_sources_attempted: list[str] = Field(default_factory=list)
+    mcp_sources_attempted: list[str] = Field(default_factory=list)
     resource_count: int = 0
     helm_release_count: int = 0
     excluded_resource_count: int = 0

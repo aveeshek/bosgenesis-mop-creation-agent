@@ -17,11 +17,11 @@ Snapshot selection must prefer:
 
 1. PostgreSQL latest ETL snapshot.
 2. ClickHouse analytical inventory.
-3. Live MCP-only fallback when explicitly enabled by policy in a later phase.
+3. Governed MCP live enrichment after stored snapshot selection.
 
-Phase 3 does not use live Kubernetes or Helm fallback. If both stored snapshot sources are
-disabled, unavailable, or empty, generation continues with empty valid artifacts and explicit
-warnings.
+Source readers do not call live Kubernetes or Helm directly. If both stored snapshot sources are
+disabled, unavailable, or empty, generation continues with warnings so the MCP enrichment layer
+can attempt governed live reads.
 
 ## Responsibilities
 

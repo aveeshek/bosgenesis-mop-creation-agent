@@ -59,8 +59,8 @@ def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGen
         extra={
             "caller": request_body.caller,
             "target_namespace": request_body.target_namespace,
-            "phase": "phase3_snapshot_reader",
-            "external_calls": "disabled",
+            "phase": "phase4_mcp_enrichment",
+            "external_calls": "governed_mcp_read_only",
         },
     )
     return _orchestrator(request).generate(request_body)

@@ -32,6 +32,8 @@ class LoggingSettings(BaseModel):
 class EndpointSettings(BaseModel):
     enabled: bool = True
     endpoint: str | None = None
+    host_header: str | None = None
+    timeout_seconds: float = 30
 
 
 class McpSettings(BaseModel):

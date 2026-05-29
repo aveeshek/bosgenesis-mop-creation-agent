@@ -38,9 +38,10 @@ def test_artifact_writer_includes_snapshot_inventory_counts(tmp_path) -> None:
         source_namespace="bosgenesis",
         request=MoPGenerationRequest(target_namespace="bosgenesis-copy-dev"),
         created_at=datetime(2026, 5, 27, tzinfo=UTC),
-        warnings=["phase3_no_live_kubernetes"],
+        warnings=["phase4_mcp_enrichment_not_configured"],
         inventory=inventory,
         snapshot_sources_attempted=["postgres"],
+        mcp_sources_attempted=["k8s_inspector_mcp", "helm_manager_mcp"],
     )
 
     manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
@@ -51,6 +52,7 @@ def test_artifact_writer_includes_snapshot_inventory_counts(tmp_path) -> None:
     assert manifest["inventory"]["snapshot_id"] == "run-123"
     assert manifest["inventory"]["resource_count"] == 2
     assert manifest["inventory"]["helm_release_count"] == 1
+    assert manifest["mcp"]["sources_attempted"] == ["k8s_inspector_mcp", "helm_manager_mcp"]
     assert "Helm releases | 1" in human_mop
     assert "Raw Kubernetes resources | 2" in human_mop
     assert "release_name: api" in installation_notes

@@ -45,7 +45,7 @@ class ArtifactWriteResult:
 
 
 class LocalArtifactWriter:
-    """Write Phase 3 snapshot-backed artifacts without live cluster calls."""
+    """Write snapshot and MCP-enriched artifacts to local storage."""
 
     def __init__(self, storage_path: str) -> None:
         self._storage_path = Path(storage_path)
@@ -62,6 +62,7 @@ class LocalArtifactWriter:
         warnings: list[str],
         inventory: NormalizedInventory | None = None,
         snapshot_sources_attempted: list[str] | None = None,
+        mcp_sources_attempted: list[str] | None = None,
     ) -> ArtifactWriteResult:
         run_dir = self._storage_path / mop_id
         generated_dir = run_dir / "generated"
@@ -89,6 +90,7 @@ class LocalArtifactWriter:
             warnings=warnings,
             inventory=inventory,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
+            mcp_sources_attempted=mcp_sources_attempted or [],
             run_dir=run_dir,
             human_mop_pdf_path=human_mop_pdf_path,
             installation_notes_path=installation_notes_path,
@@ -109,7 +111,7 @@ class LocalArtifactWriter:
         _write_placeholder_pdf(human_mop_pdf_path, human_mop_content)
 
         manifest = {
-            "artifact_type": "phase3_snapshot_mop_artifact",
+            "artifact_type": "phase4_mcp_enriched_mop_artifact",
             "schema_version": "1.0",
             "mop_id": mop_id,
             "run_id": run_id,
@@ -120,8 +122,8 @@ class LocalArtifactWriter:
             "created_at": created_at.isoformat(),
             "status": "generated",
             "external_calls": {
-                "kubernetes": False,
-                "helm": False,
+                "kubernetes": "k8s_inspector_mcp" in (mcp_sources_attempted or []),
+                "helm": "helm_manager_mcp" in (mcp_sources_attempted or []),
                 "qdrant": False,
                 "datastores": True,
             },
@@ -131,6 +133,11 @@ class LocalArtifactWriter:
                 "resource_count": inventory.resource_count if inventory else 0,
                 "helm_release_count": inventory.helm_release_count if inventory else 0,
                 "sources_attempted": snapshot_sources_attempted or [],
+            },
+            "mcp": {
+                "sources_attempted": mcp_sources_attempted or [],
+                "live_enrichment_enabled": bool(mcp_sources_attempted),
+                "policy": "governed_read_only_mcp_clients_no_raw_kubectl_or_helm",
             },
             "artifacts": {
                 "human_mop_markdown_path": str(human_mop_markdown_path),
@@ -170,6 +177,7 @@ class LocalArtifactWriter:
         warnings: list[str],
         inventory: NormalizedInventory | None,
         snapshot_sources_attempted: list[str],
+        mcp_sources_attempted: list[str],
         run_dir: Path,
         human_mop_pdf_path: Path,
         installation_notes_path: Path,
@@ -180,8 +188,8 @@ class LocalArtifactWriter:
         warning_yaml = "\n".join(f"  - {warning}" for warning in warnings) or "  []"
         empty_yaml_list = "  []"
         empty_phase_commands = (
-            "  - step_id: phase3-placeholder\n"
-            "    title: Phase 3 placeholder\n"
+            "  - step_id: phase4-placeholder\n"
+            "    title: Phase 4 placeholder\n"
             "    type: validation\n"
             "    depends_on: []\n"
             "    evidence_refs: []\n"
@@ -189,9 +197,9 @@ class LocalArtifactWriter:
             "    inference:\n"
             "      label: human_input_required\n"
             "      confidence: low\n"
-            "      rationale: Phase 3 reads stored snapshots only and does not inspect live systems.\n"
+            "      rationale: Phase 4 enriches inventory through governed MCP reads only.\n"
             "    command: |\n"
-            "      echo \"Phase 3 placeholder only\"\n"
+            "      echo \"Phase 4 placeholder only\"\n"
             "    expected: No target system changes are made.\n"
             "    on_failure: STOP and inspect the local artifact bundle.\n"
             "    mutates_target: false\n"
@@ -201,7 +209,7 @@ class LocalArtifactWriter:
         return {
             "mop_title": f"Namespace Recreation MoP - {source_namespace} to {request.target_namespace}",
             "mop_id": mop_id,
-            "mop_version": "0.3.0-phase3",
+            "mop_version": "0.4.0-phase4",
             "generated_at": created_at.isoformat(),
             "reviewed_by_placeholder": "TBD",
             "change_ticket_placeholder": "TBD",
@@ -218,29 +226,29 @@ class LocalArtifactWriter:
             ),
             "run_id": run_id,
             "correlation_id": correlation_id,
-            "change_reason": "Phase 3 stored snapshot inventory artifact generation test.",
+            "change_reason": "Phase 4 stored snapshot plus governed MCP enrichment artifact generation test.",
             "helm_release_count": str(inventory.helm_release_count if inventory else 0),
             "helm_release_summary": _helm_summary(inventory),
             "raw_k8s_resource_count": str(inventory.resource_count if inventory else 0),
             "raw_k8s_summary": _resource_summary(inventory),
             "application_target_count": "0",
-            "application_summary": "Application mode metadata discovery is not executed in Phase 3.",
+            "application_summary": "Application mode metadata discovery is not executed in Phase 4.",
             "excluded_resource_count": "0",
             "excluded_summary": "No resources were inspected.",
             "warning_count": str(len(warnings)),
             "warning_summary": "; ".join(warnings),
             "assumptions_list": (
-                "- Phase 3 reads stored ETL snapshots only.\n"
-                "- Live Kubernetes and Helm MCP enrichment is disabled."
+                "- Stored ETL snapshots are preferred when available.\n"
+                "- Live Kubernetes and Helm reads are performed only through governed MCP servers."
             ),
             "unknowns_list": _unknowns(inventory),
             "expected_cluster_context": "TBD",
             "artifact_bundle_path": str(run_dir),
             "backup_dir": str(evidence_dir),
-            "helm_backup_commands": "echo \"Phase 3 placeholder: Helm values enrichment arrives later\"",
+            "helm_backup_commands": "echo \"Phase 4 placeholder: Helm values are MCP evidence only\"",
             "target_namespace_preparation_steps": _placeholder_step("4.1", "Target namespace preparation"),
             "secret_placeholder_rows": "| TBD | TBD | TBD | Pending |",
-            "secret_creation_guidance": "No secret placeholders are discovered in Phase 3.",
+            "secret_creation_guidance": "No secret values are read or generated in Phase 4.",
             "configmap_execution_steps": _resource_steps(inventory, "ConfigMap", "4.3"),
             "pvc_execution_steps": _resource_steps(inventory, "PersistentVolumeClaim", "4.4"),
             "helm_release_execution_steps": _helm_steps(inventory),
@@ -250,19 +258,23 @@ class LocalArtifactWriter:
                 "4.8",
                 "Application metadata recreation",
             ),
-            "helm_validation_commands": "echo \"Phase 3 placeholder: validation targets require later enrichment\"",
-            "ingress_validation_commands": "echo \"Phase 3 placeholder: ingress validation targets require later enrichment\"",
+            "helm_validation_commands": "echo \"Phase 4 placeholder: validate enriched Helm evidence manually\"",
+            "ingress_validation_commands": "echo \"Phase 4 placeholder: validate enriched ingress evidence manually\"",
             "application_mode_validation_steps": _placeholder_step(
                 "5.5",
                 "Application metadata validation",
             ),
-            "helm_rollback_commands": "echo \"Phase 3 placeholder: rollback commands require later enrichment\"",
+            "helm_rollback_commands": "echo \"Phase 4 placeholder: rollback commands require synthesis phase\"",
             "raw_kubernetes_rollback_commands": (
-                "echo \"Phase 3 placeholder: raw Kubernetes rollback requires later enrichment\""
+                "echo \"Phase 4 placeholder: raw Kubernetes rollback requires synthesis phase\""
             ),
-            "application_mode_rollback_steps": "No application metadata was created in Phase 3.",
-            "evidence_references": _evidence_references(inventory, snapshot_sources_attempted),
-            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 3.",
+            "application_mode_rollback_steps": "No application metadata was created in Phase 4.",
+            "evidence_references": _evidence_references(
+                inventory,
+                snapshot_sources_attempted,
+                mcp_sources_attempted,
+            ),
+            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 4.",
             "inference_labels_and_rationale": (
                 "- human_input_required / low: all operational steps are placeholders."
             ),
@@ -271,12 +283,15 @@ class LocalArtifactWriter:
             "qdrant_lookup_status": "not_executed",
             "qdrant_reference_count": "0",
             "required_human_inputs_yaml": empty_yaml_list,
-            "k8s_mcp_status": "not_executed",
-            "k8s_evidence_references_yaml": empty_yaml_list,
-            "helm_mcp_status": "not_executed",
-            "helm_evidence_references_yaml": empty_yaml_list,
-            "data_ingestion_status": "not_executed",
-            "data_ingestion_references_yaml": empty_yaml_list,
+            "k8s_mcp_status": _source_status("k8s_inspector_mcp", mcp_sources_attempted),
+            "k8s_evidence_references_yaml": _source_refs("k8s_inspector_mcp", mcp_sources_attempted),
+            "helm_mcp_status": _source_status("helm_manager_mcp", mcp_sources_attempted),
+            "helm_evidence_references_yaml": _source_refs("helm_manager_mcp", mcp_sources_attempted),
+            "data_ingestion_status": _source_status("data_ingestion_mcp", mcp_sources_attempted),
+            "data_ingestion_references_yaml": _source_refs(
+                "data_ingestion_mcp",
+                mcp_sources_attempted,
+            ),
             "qdrant_references_yaml": empty_yaml_list,
             "helm_releases_yaml": _helm_inventory_yaml(inventory),
             "raw_kubernetes_resources_yaml": _resource_inventory_yaml(inventory),
@@ -284,7 +299,7 @@ class LocalArtifactWriter:
             "excluded_resources_yaml": empty_yaml_list,
             "warnings_yaml": warning_yaml,
             "verify_access_commands_yaml": empty_phase_commands,
-            "verify_access_expected_outcomes_yaml": "  - Stored snapshot inventory is represented in generated artifacts.",
+            "verify_access_expected_outcomes_yaml": "  - Snapshot and MCP inventory evidence is represented in generated artifacts.",
             "verify_access_stop_conditions_yaml": "  - Local artifact directory is not writable.",
             "verify_access_evidence_refs_yaml": "  - artifact.json",
             "target_namespace_commands_yaml": empty_phase_commands,
@@ -304,14 +319,14 @@ class LocalArtifactWriter:
             "pvc_rollback_yaml": "  - No rollback required.",
             "pvc_evidence_refs_yaml": "  - artifact.json",
             "helm_commands_yaml": empty_phase_commands,
-            "helm_expected_outcomes_yaml": "  - Helm release recreation guidance exists for stored snapshot releases.",
+            "helm_expected_outcomes_yaml": "  - Helm release recreation guidance exists for stored or MCP-enriched releases.",
             "helm_rollback_yaml": "  - No rollback required.",
             "helm_unknowns_yaml": (
-                "  - Helm chart repositories and values require Phase 4+ enrichment."
+                "  - Helm install command synthesis requires a later phase."
             ),
             "raw_kubernetes_commands_yaml": empty_phase_commands,
             "raw_kubernetes_expected_outcomes_yaml": (
-                "  - Raw Kubernetes recreation guidance exists for stored snapshot resources."
+                "  - Raw Kubernetes recreation guidance exists for stored or MCP-enriched resources."
             ),
             "raw_kubernetes_rollback_yaml": "  - No rollback required.",
             "raw_kubernetes_evidence_refs_yaml": "  - artifact.json",
@@ -335,11 +350,11 @@ class LocalArtifactWriter:
                 "    action_if_failed: STOP"
             ),
             "rollback_trigger_conditions_yaml": "  - Artifact publication fails.",
-            "namespace_cleanup_rollback_yaml": "  - Not applicable in Phase 3.",
+            "namespace_cleanup_rollback_yaml": "  - Not applicable in Phase 4.",
             "inferences_yaml": (
                 "  - label: human_input_required\n"
                 "    confidence: low\n"
-                "    rationale: Live runtime discovery is not implemented in Phase 3."
+                "    rationale: Live runtime discovery is limited to governed MCP read tools in Phase 4."
             ),
             "unknowns_yaml": _unknowns_yaml(inventory),
             "confidence_summary_yaml": (
@@ -371,7 +386,7 @@ def _placeholder_step(section: str, title: str) -> str:
     return (
         f"**Step {section} - {title} placeholder**\n\n"
         "```bash\n"
-        f"echo \"Phase 3 placeholder: {title}\"\n"
+        f"echo \"Phase 4 placeholder: {title}\"\n"
         "```\n\n"
         "**Expected output:** No target system changes are made.\n\n"
         "> STOP if this placeholder appears in a production execution package."
@@ -397,9 +412,9 @@ def _resource_summary(inventory: NormalizedInventory | None) -> str:
 
 def _unknowns(inventory: NormalizedInventory | None) -> str:
     if not inventory:
-        return "- Stored snapshot inventory is missing.\n- Live Kubernetes fallback is disabled."
+        return "- Inventory is missing from snapshots and MCP enrichment."
     return (
-        "- Helm values, chart repositories, and exact install commands require Phase 4+ enrichment.\n"
+        "- Exact install command synthesis requires a later generation phase.\n"
         "- Secret values are intentionally unavailable and must be supplied by humans."
     )
 
@@ -474,15 +489,32 @@ def _raw_kubernetes_steps(inventory: NormalizedInventory | None) -> str:
 def _evidence_references(
     inventory: NormalizedInventory | None,
     snapshot_sources_attempted: list[str],
+    mcp_sources_attempted: list[str],
 ) -> str:
-    attempted = ", ".join(snapshot_sources_attempted) if snapshot_sources_attempted else "none"
+    snapshot_attempted = ", ".join(snapshot_sources_attempted) if snapshot_sources_attempted else "none"
+    mcp_attempted = ", ".join(mcp_sources_attempted) if mcp_sources_attempted else "none"
     if not inventory:
-        return f"- artifact.json: Phase 3 local artifact manifest.\n- Snapshot sources attempted: {attempted}."
+        return (
+            "- artifact.json: Phase 4 local artifact manifest.\n"
+            f"- Snapshot sources attempted: {snapshot_attempted}.\n"
+            f"- MCP sources attempted: {mcp_attempted}."
+        )
     return (
         f"- {inventory.source}: snapshot_id={inventory.snapshot_id}, "
         f"resources={inventory.resource_count}, helm_releases={inventory.helm_release_count}.\n"
-        f"- Snapshot sources attempted: {attempted}."
+        f"- Snapshot sources attempted: {snapshot_attempted}.\n"
+        f"- MCP sources attempted: {mcp_attempted}."
     )
+
+
+def _source_status(source_name: str, mcp_sources_attempted: list[str]) -> str:
+    return "attempted" if source_name in mcp_sources_attempted else "not_attempted"
+
+
+def _source_refs(source_name: str, mcp_sources_attempted: list[str]) -> str:
+    if source_name not in mcp_sources_attempted:
+        return "  []"
+    return f"  - artifact.json#mcp.sources_attempted[{source_name}]"
 
 
 def _resource_inventory_yaml(inventory: NormalizedInventory | None) -> str:
@@ -525,10 +557,10 @@ def _helm_inventory_yaml(inventory: NormalizedInventory | None) -> str:
 
 def _unknowns_yaml(inventory: NormalizedInventory | None) -> str:
     if not inventory:
-        return "  - Stored snapshot inventory is missing."
+        return "  - Inventory is missing from snapshots and MCP enrichment."
     return (
-        "  - Helm values and chart repositories require later enrichment.\n"
-        "  - Runtime live state is not verified in Phase 3."
+        "  - Exact install command synthesis requires a later generation phase.\n"
+        "  - Secret values are intentionally unavailable and must be supplied by humans."
     )
 
 
@@ -544,7 +576,7 @@ def _write_placeholder_pdf(path: Path, markdown_content: str) -> None:
         for line in markdown_content.splitlines()
         if line.startswith("#") and line.strip("# ").strip()
     ]
-    lines = ["BOS Genesis MoP Creation Agent", "Phase 3 PDF Placeholder", *headings[:30]]
+    lines = ["BOS Genesis MoP Creation Agent", "Phase 4 PDF Placeholder", *headings[:30]]
     content_stream = _pdf_text_stream(lines)
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",

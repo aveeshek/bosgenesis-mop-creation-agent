@@ -58,7 +58,13 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert payload["content"].startswith("# MoP:")
     assert payload["installation_notes_content"].startswith("---")
     assert payload["qdrant_lookup_status"] == "not_executed"
-    assert "Kubernetes and Helm MCP integrations were not invoked" in " ".join(payload["warnings"])
+    assert payload["mcp_sources_attempted"] == [
+        "k8s_inspector_mcp",
+        "helm_manager_mcp",
+        "data_ingestion_mcp",
+    ]
+    assert "k8s_mcp_tools_list_failed" in " ".join(payload["warnings"])
+    assert "helm_mcp_tools_list_failed" in " ".join(payload["warnings"])
     assert "postgres_snapshot_read_failed" in " ".join(payload["warnings"])
     assert "clickhouse_snapshot_read_failed" in " ".join(payload["warnings"])
     assert "snapshot_inventory_missing" in " ".join(payload["warnings"])
@@ -77,11 +83,12 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert pdf_bytes.startswith(b"%PDF-1.4")
     assert manifest["mop_id"] == payload["mop_id"]
     assert manifest["external_calls"] == {
-        "kubernetes": False,
-        "helm": False,
+        "kubernetes": True,
+        "helm": True,
         "qdrant": False,
         "datastores": True,
     }
+    assert manifest["mcp"]["sources_attempted"] == payload["mcp_sources_attempted"]
     for section in REQUIRED_HUMAN_MOP_SECTIONS:
         assert section in human_mop
     assert "artifact_type: installation_notes" in installation_notes
