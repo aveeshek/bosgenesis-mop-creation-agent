@@ -35,6 +35,16 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
             input_schema={"type": "object", "properties": {}, "additionalProperties": False},
         ),
         McpToolDefinition(
+            name="mop_creation_classification",
+            description="Get the classification and safety summary for a generated MoP.",
+            input_schema={
+                "type": "object",
+                "properties": {"mop_id": {"type": "string"}},
+                "required": ["mop_id"],
+                "additionalProperties": False,
+            },
+        ),
+        McpToolDefinition(
             name="mop_creation_effective_config",
             description="Return redacted effective configuration.",
             input_schema={"type": "object", "properties": {}, "additionalProperties": False},
@@ -69,6 +79,11 @@ def call_mcp_tool(
         if response is None:
             return {"status": "not_found"}
         return response.model_dump(mode="json")
+    if tool_name == "mop_creation_classification":
+        summary = orchestrator.classification(str(arguments["mop_id"]))
+        if summary is None:
+            return {"status": "not_found", "mop_id": arguments["mop_id"]}
+        return summary
     if tool_name == "mop_creation_effective_config":
         return settings.redacted_dict()
     raise KeyError(tool_name)

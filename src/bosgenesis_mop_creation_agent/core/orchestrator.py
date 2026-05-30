@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from bosgenesis_mop_creation_agent.classification.models import ClassificationSummary
+from bosgenesis_mop_creation_agent.classification.resource_classifier import classify_inventory
 from bosgenesis_mop_creation_agent.config.settings import Settings
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.models.responses import (
@@ -34,6 +36,7 @@ class MoPCreationOrchestrator:
             data_ingestion_client=DataIngestionClient.from_settings(settings.mcp.data_ingestion_agent),
         )
         self._responses: dict[str, MoPGenerationResponse] = {}
+        self._classifications: dict[str, ClassificationSummary] = {}
         self._latest_mop_id: str | None = None
 
     def generate(self, request: MoPGenerationRequest) -> MoPGenerationResponse:
@@ -52,6 +55,9 @@ class MoPCreationOrchestrator:
         )
         warnings.extend(enrichment_result.warnings)
         inventory = enrichment_result.inventory
+        classification = classify_inventory(inventory)
+        if classification:
+            warnings.extend(classification.warnings)
         artifact_result = self._artifact_writer.write(
             mop_id=mop_id,
             run_id=run_id,
@@ -61,6 +67,7 @@ class MoPCreationOrchestrator:
             created_at=created_at,
             warnings=warnings,
             inventory=inventory,
+            classification=classification,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
             mcp_sources_attempted=enrichment_result.sources_attempted,
         )
@@ -82,7 +89,15 @@ class MoPCreationOrchestrator:
             mcp_sources_attempted=enrichment_result.sources_attempted,
             resource_count=inventory.resource_count if inventory else 0,
             helm_release_count=inventory.helm_release_count if inventory else 0,
-            excluded_resource_count=0,
+            helm_managed_resource_count=(
+                classification.helm_managed_count if classification else 0
+            ),
+            raw_k8s_resource_count=classification.raw_k8s_count if classification else 0,
+            excluded_resource_count=classification.excluded_count if classification else 0,
+            warning_only_resource_count=(
+                classification.warning_only_count if classification else 0
+            ),
+            classification_summary=_classification_summary(classification),
             warning_count=len(warnings),
             trace_ids=TraceIds(
                 langfuse=f"stub-langfuse-{run_id}",
@@ -104,6 +119,8 @@ class MoPCreationOrchestrator:
         )
 
         self._responses[mop_id] = response
+        if classification:
+            self._classifications[mop_id] = classification
         self._latest_mop_id = mop_id
         return response
 
@@ -115,5 +132,50 @@ class MoPCreationOrchestrator:
             return None
         return self._responses[self._latest_mop_id]
 
+    def classification(self, mop_id: str) -> dict | None:
+        classification = self._classifications.get(mop_id)
+        if classification is None:
+            return None
+        return _classification_summary(classification, include_resources=True)
+
 
 PhaseOneMoPCreationOrchestrator = MoPCreationOrchestrator
+
+
+def _classification_summary(
+    classification: ClassificationSummary | None,
+    *,
+    include_resources: bool = False,
+) -> dict:
+    if classification is None:
+        return {
+            "enabled": False,
+            "helm_managed_resource_count": 0,
+            "raw_k8s_resource_count": 0,
+            "excluded_resource_count": 0,
+            "warning_only_resource_count": 0,
+            "warnings": [],
+        }
+    summary = {
+        "enabled": True,
+        "namespace": classification.namespace,
+        "helm_managed_resource_count": classification.helm_managed_count,
+        "raw_k8s_resource_count": classification.raw_k8s_count,
+        "excluded_resource_count": classification.excluded_count,
+        "warning_only_resource_count": classification.warning_only_count,
+        "warnings": classification.warnings,
+    }
+    if include_resources:
+        summary["resources"] = [
+            {
+                "kind": item.resource.kind,
+                "name": item.resource.name,
+                "namespace": item.resource.namespace,
+                "category": item.category.value,
+                "reason": item.reason,
+                "evidence": item.evidence,
+                "helm_release_name": item.helm_release_name,
+            }
+            for item in classification.resources
+        ]
+    return summary

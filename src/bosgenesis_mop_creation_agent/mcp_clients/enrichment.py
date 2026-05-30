@@ -184,6 +184,7 @@ def _releases_from_helm_payload(namespace: str, payload: dict[str, Any]) -> list
                     "release": release_payload,
                     "status": status_payload,
                     "history": bundle.get("history"),
+                    "manifest": bundle.get("manifest"),
                     "values_present": "values" in bundle,
                     "manifest_present": "manifest" in bundle,
                 },

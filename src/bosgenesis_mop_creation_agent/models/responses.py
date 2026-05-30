@@ -34,7 +34,11 @@ class MoPGenerationResponse(BaseModel):
     mcp_sources_attempted: list[str] = Field(default_factory=list)
     resource_count: int = 0
     helm_release_count: int = 0
+    helm_managed_resource_count: int = 0
+    raw_k8s_resource_count: int = 0
     excluded_resource_count: int = 0
+    warning_only_resource_count: int = 0
+    classification_summary: dict[str, Any] = Field(default_factory=dict)
     warning_count: int = 0
     trace_ids: TraceIds = Field(default_factory=TraceIds)
     artifacts: ArtifactMetadata

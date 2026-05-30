@@ -149,7 +149,11 @@ qdrant_reference_count
 qdrant_lookup_status
 resource_count
 helm_release_count
+helm_managed_resource_count
+raw_k8s_resource_count
 excluded_resource_count
+warning_only_resource_count
+classification_summary
 warning_count
 trace_ids
 warnings
@@ -160,6 +164,14 @@ artifacts.installation_notes_path
 ```
 
 Optional stores may fail without failing the run, but local storage failure must fail the request.
+
+The classification summary must be available in the generation response and through:
+
+```text
+GET /mop-creation/{mop_id}/classification
+```
+
+The summary must include classification counts, warning summaries, and resource-level category records when requested through the dedicated endpoint. Pod runtime artifacts should be summarized rather than emitted as one warning per Pod.
 
 ## 8. MCP Output Contract
 

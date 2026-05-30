@@ -70,6 +70,11 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert "snapshot_inventory_missing" in " ".join(payload["warnings"])
     assert payload["resource_count"] == 0
     assert payload["helm_release_count"] == 0
+    assert payload["helm_managed_resource_count"] == 0
+    assert payload["raw_k8s_resource_count"] == 0
+    assert payload["excluded_resource_count"] == 0
+    assert payload["warning_only_resource_count"] == 0
+    assert payload["classification_summary"]["enabled"] is False
 
     human_mop = Path(payload["artifacts"]["human_mop_markdown_path"]).read_text(encoding="utf-8")
     installation_notes = Path(payload["artifacts"]["installation_notes_path"]).read_text(
@@ -104,6 +109,9 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert get_response.json()["mop_id"] == mop_id
     assert latest_response.json()["mop_id"] == mop_id
 
+    classification_response = client.get(f"/mop-creation/{mop_id}/classification")
+    assert classification_response.status_code == 404
+
 
 def test_latest_returns_404_before_generation() -> None:
     client = TestClient(create_app(Settings()))
@@ -125,6 +133,7 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
         "mop_creation_generate",
         "mop_creation_get",
         "mop_creation_latest",
+        "mop_creation_classification",
         "mop_creation_effective_config",
     }.issubset(tool_names)
 

@@ -59,7 +59,7 @@ def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGen
         extra={
             "caller": request_body.caller,
             "target_namespace": request_body.target_namespace,
-            "phase": "phase4_mcp_enrichment",
+            "phase": "phase5_classification_safety",
             "external_calls": "governed_mcp_read_only",
         },
     )
@@ -80,6 +80,17 @@ def get_mop(mop_id: str, request: Request) -> MoPGenerationResponse:
     if response is None:
         raise HTTPException(status_code=404, detail=f"MoP response not found: {mop_id}")
     return response
+
+
+@router.get("/mop-creation/{mop_id}/classification")
+def get_mop_classification(mop_id: str, request: Request) -> dict[str, Any]:
+    summary = _orchestrator(request).classification(mop_id)
+    if summary is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"MoP classification summary not found: {mop_id}",
+        )
+    return summary
 
 
 @router.get("/mcp/tools")

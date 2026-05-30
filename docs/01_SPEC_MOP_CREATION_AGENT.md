@@ -176,7 +176,20 @@ Response:
   "qdrant_lookup_status": "references_found",
   "resource_count": 42,
   "helm_release_count": 5,
+  "helm_managed_resource_count": 25,
+  "raw_k8s_resource_count": 14,
   "excluded_resource_count": 3,
+  "warning_only_resource_count": 2,
+  "classification_summary": {
+    "enabled": true,
+    "helm_managed_resource_count": 25,
+    "raw_k8s_resource_count": 14,
+    "excluded_resource_count": 3,
+    "warning_only_resource_count": 2,
+    "warnings": [
+      "manual_review_required:Pod:8_runtime_artifacts_skipped"
+    ]
+  },
   "warning_count": 1,
   "trace_ids": {
     "langfuse": "langfuse-trace-id",
@@ -196,13 +209,21 @@ Initial MCP tools:
 ```text
 mop_creation_health
 mop_creation_generate
-mop_creation_refine
 mop_creation_get
 mop_creation_latest
+mop_creation_classification
 mop_creation_effective_config
 ```
 
 The MCP surface is intended for Codex and other agents to request generation, retrieve artifacts, and refine documents without bypassing the governed evidence boundaries.
+
+The REST surface also exposes:
+
+```text
+GET /mop-creation/{mop_id}/classification
+```
+
+This endpoint returns a safety/classification audit summary with counts, reasons, evidence references, and resource-level categories. It is intended for deploy smoke tests and Codex validation without opening generated artifact files.
 
 ## 9. Configuration
 

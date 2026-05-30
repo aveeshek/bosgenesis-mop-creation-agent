@@ -7,6 +7,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from bosgenesis_mop_creation_agent.classification.models import (
+    ClassificationSummary,
+    ClassifiedResource,
+)
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.sources.snapshot_models import NormalizedInventory
 
@@ -61,6 +65,7 @@ class LocalArtifactWriter:
         created_at: datetime,
         warnings: list[str],
         inventory: NormalizedInventory | None = None,
+        classification: ClassificationSummary | None = None,
         snapshot_sources_attempted: list[str] | None = None,
         mcp_sources_attempted: list[str] | None = None,
     ) -> ArtifactWriteResult:
@@ -89,6 +94,7 @@ class LocalArtifactWriter:
             created_at=created_at,
             warnings=warnings,
             inventory=inventory,
+            classification=classification,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
             mcp_sources_attempted=mcp_sources_attempted or [],
             run_dir=run_dir,
@@ -111,7 +117,7 @@ class LocalArtifactWriter:
         _write_placeholder_pdf(human_mop_pdf_path, human_mop_content)
 
         manifest = {
-            "artifact_type": "phase4_mcp_enriched_mop_artifact",
+            "artifact_type": "phase5_classified_mop_artifact",
             "schema_version": "1.0",
             "mop_id": mop_id,
             "run_id": run_id,
@@ -134,6 +140,7 @@ class LocalArtifactWriter:
                 "helm_release_count": inventory.helm_release_count if inventory else 0,
                 "sources_attempted": snapshot_sources_attempted or [],
             },
+            "classification": _classification_manifest(classification),
             "mcp": {
                 "sources_attempted": mcp_sources_attempted or [],
                 "live_enrichment_enabled": bool(mcp_sources_attempted),
@@ -176,6 +183,7 @@ class LocalArtifactWriter:
         created_at: datetime,
         warnings: list[str],
         inventory: NormalizedInventory | None,
+        classification: ClassificationSummary | None,
         snapshot_sources_attempted: list[str],
         mcp_sources_attempted: list[str],
         run_dir: Path,
@@ -188,8 +196,8 @@ class LocalArtifactWriter:
         warning_yaml = "\n".join(f"  - {warning}" for warning in warnings) or "  []"
         empty_yaml_list = "  []"
         empty_phase_commands = (
-            "  - step_id: phase4-placeholder\n"
-            "    title: Phase 4 placeholder\n"
+            "  - step_id: phase5-placeholder\n"
+            "    title: Phase 5 placeholder\n"
             "    type: validation\n"
             "    depends_on: []\n"
             "    evidence_refs: []\n"
@@ -197,9 +205,9 @@ class LocalArtifactWriter:
             "    inference:\n"
             "      label: human_input_required\n"
             "      confidence: low\n"
-            "      rationale: Phase 4 enriches inventory through governed MCP reads only.\n"
+            "      rationale: Phase 5 classifies inventory into safe reconstruction groups.\n"
             "    command: |\n"
-            "      echo \"Phase 4 placeholder only\"\n"
+            "      echo \"Phase 5 placeholder only\"\n"
             "    expected: No target system changes are made.\n"
             "    on_failure: STOP and inspect the local artifact bundle.\n"
             "    mutates_target: false\n"
@@ -209,7 +217,7 @@ class LocalArtifactWriter:
         return {
             "mop_title": f"Namespace Recreation MoP - {source_namespace} to {request.target_namespace}",
             "mop_id": mop_id,
-            "mop_version": "0.4.0-phase4",
+            "mop_version": "0.5.0-phase5",
             "generated_at": created_at.isoformat(),
             "reviewed_by_placeholder": "TBD",
             "change_ticket_placeholder": "TBD",
@@ -226,15 +234,15 @@ class LocalArtifactWriter:
             ),
             "run_id": run_id,
             "correlation_id": correlation_id,
-            "change_reason": "Phase 4 stored snapshot plus governed MCP enrichment artifact generation test.",
+            "change_reason": "Phase 5 classified snapshot plus governed MCP enrichment artifact generation test.",
             "helm_release_count": str(inventory.helm_release_count if inventory else 0),
             "helm_release_summary": _helm_summary(inventory),
-            "raw_k8s_resource_count": str(inventory.resource_count if inventory else 0),
-            "raw_k8s_summary": _resource_summary(inventory),
+            "raw_k8s_resource_count": str(_raw_count(inventory, classification)),
+            "raw_k8s_summary": _resource_summary(inventory, classification),
             "application_target_count": "0",
-            "application_summary": "Application mode metadata discovery is not executed in Phase 4.",
-            "excluded_resource_count": "0",
-            "excluded_summary": "No resources were inspected.",
+            "application_summary": "Application mode metadata discovery is not executed in Phase 5.",
+            "excluded_resource_count": str(classification.excluded_count if classification else 0),
+            "excluded_summary": _excluded_summary(classification),
             "warning_count": str(len(warnings)),
             "warning_summary": "; ".join(warnings),
             "assumptions_list": (
@@ -245,40 +253,45 @@ class LocalArtifactWriter:
             "expected_cluster_context": "TBD",
             "artifact_bundle_path": str(run_dir),
             "backup_dir": str(evidence_dir),
-            "helm_backup_commands": "echo \"Phase 4 placeholder: Helm values are MCP evidence only\"",
+            "helm_backup_commands": "echo \"Phase 5 placeholder: Helm values are MCP evidence only\"",
             "target_namespace_preparation_steps": _placeholder_step("4.1", "Target namespace preparation"),
             "secret_placeholder_rows": "| TBD | TBD | TBD | Pending |",
-            "secret_creation_guidance": "No secret values are read or generated in Phase 4.",
-            "configmap_execution_steps": _resource_steps(inventory, "ConfigMap", "4.3"),
-            "pvc_execution_steps": _resource_steps(inventory, "PersistentVolumeClaim", "4.4"),
+            "secret_creation_guidance": "No secret values are read or generated in Phase 5.",
+            "configmap_execution_steps": _resource_steps(inventory, "ConfigMap", "4.3", classification),
+            "pvc_execution_steps": _resource_steps(
+                inventory,
+                "PersistentVolumeClaim",
+                "4.4",
+                classification,
+            ),
             "helm_release_execution_steps": _helm_steps(inventory),
-            "raw_kubernetes_execution_steps": _raw_kubernetes_steps(inventory),
-            "ingress_execution_steps": _resource_steps(inventory, "Ingress", "4.7"),
+            "raw_kubernetes_execution_steps": _raw_kubernetes_steps(inventory, classification),
+            "ingress_execution_steps": _resource_steps(inventory, "Ingress", "4.7", classification),
             "application_mode_execution_steps": _placeholder_step(
                 "4.8",
                 "Application metadata recreation",
             ),
-            "helm_validation_commands": "echo \"Phase 4 placeholder: validate enriched Helm evidence manually\"",
-            "ingress_validation_commands": "echo \"Phase 4 placeholder: validate enriched ingress evidence manually\"",
+            "helm_validation_commands": "echo \"Phase 5 placeholder: validate enriched Helm evidence manually\"",
+            "ingress_validation_commands": "echo \"Phase 5 placeholder: validate enriched ingress evidence manually\"",
             "application_mode_validation_steps": _placeholder_step(
                 "5.5",
                 "Application metadata validation",
             ),
-            "helm_rollback_commands": "echo \"Phase 4 placeholder: rollback commands require synthesis phase\"",
+            "helm_rollback_commands": "echo \"Phase 5 placeholder: rollback commands require synthesis phase\"",
             "raw_kubernetes_rollback_commands": (
-                "echo \"Phase 4 placeholder: raw Kubernetes rollback requires synthesis phase\""
+                "echo \"Phase 5 placeholder: raw Kubernetes rollback requires synthesis phase\""
             ),
-            "application_mode_rollback_steps": "No application metadata was created in Phase 4.",
+            "application_mode_rollback_steps": "No application metadata was created in Phase 5.",
             "evidence_references": _evidence_references(
                 inventory,
                 snapshot_sources_attempted,
                 mcp_sources_attempted,
             ),
-            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 4.",
+            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 5.",
             "inference_labels_and_rationale": (
                 "- human_input_required / low: all operational steps are placeholders."
             ),
-            "excluded_resources": "- Secret values and cluster-scoped resources remain excluded.",
+            "excluded_resources": _excluded_resources_markdown(classification),
             "generation_status": "generated",
             "qdrant_lookup_status": "not_executed",
             "qdrant_reference_count": "0",
@@ -294,9 +307,9 @@ class LocalArtifactWriter:
             ),
             "qdrant_references_yaml": empty_yaml_list,
             "helm_releases_yaml": _helm_inventory_yaml(inventory),
-            "raw_kubernetes_resources_yaml": _resource_inventory_yaml(inventory),
+            "raw_kubernetes_resources_yaml": _resource_inventory_yaml(inventory, classification),
             "application_targets_yaml": empty_yaml_list,
-            "excluded_resources_yaml": empty_yaml_list,
+            "excluded_resources_yaml": _excluded_resources_yaml(classification),
             "warnings_yaml": warning_yaml,
             "verify_access_commands_yaml": empty_phase_commands,
             "verify_access_expected_outcomes_yaml": "  - Snapshot and MCP inventory evidence is represented in generated artifacts.",
@@ -350,11 +363,11 @@ class LocalArtifactWriter:
                 "    action_if_failed: STOP"
             ),
             "rollback_trigger_conditions_yaml": "  - Artifact publication fails.",
-            "namespace_cleanup_rollback_yaml": "  - Not applicable in Phase 4.",
+            "namespace_cleanup_rollback_yaml": "  - Not applicable in Phase 5.",
             "inferences_yaml": (
                 "  - label: human_input_required\n"
                 "    confidence: low\n"
-                "    rationale: Live runtime discovery is limited to governed MCP read tools in Phase 4."
+                "    rationale: Inventory is classified before any reconstruction guidance is emitted."
             ),
             "unknowns_yaml": _unknowns_yaml(inventory),
             "confidence_summary_yaml": (
@@ -386,7 +399,7 @@ def _placeholder_step(section: str, title: str) -> str:
     return (
         f"**Step {section} - {title} placeholder**\n\n"
         "```bash\n"
-        f"echo \"Phase 4 placeholder: {title}\"\n"
+        f"echo \"Phase 5 placeholder: {title}\"\n"
         "```\n\n"
         "**Expected output:** No target system changes are made.\n\n"
         "> STOP if this placeholder appears in a production execution package."
@@ -401,13 +414,52 @@ def _helm_summary(inventory: NormalizedInventory | None) -> str:
     return f"Stored snapshot includes Helm releases: {names}{suffix}"
 
 
-def _resource_summary(inventory: NormalizedInventory | None) -> str:
-    if not inventory or not inventory.resources:
-        return "No raw Kubernetes resources found in the selected stored snapshot."
+def _raw_count(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None,
+) -> int:
+    if classification:
+        return classification.raw_k8s_count
+    return inventory.resource_count if inventory else 0
+
+
+def _resource_summary(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None = None,
+) -> str:
+    if classification:
+        resources = [item.resource for item in classification.raw_k8s]
+        if not resources:
+            return "No supported raw Kubernetes resources are eligible for executable recreation."
+    else:
+        resources = inventory.resources if inventory else []
+        if not resources:
+            return "No raw Kubernetes resources found in the selected stored snapshot."
+
     counts: dict[str, int] = {}
-    for resource in inventory.resources:
+    for resource in resources:
         counts[resource.kind] = counts.get(resource.kind, 0) + 1
     return ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items()))
+
+
+def _excluded_summary(classification: ClassificationSummary | None) -> str:
+    if not classification or not classification.excluded:
+        return "No blocked or out-of-scope resources were classified for exclusion."
+    counts: dict[str, int] = {}
+    for item in classification.excluded:
+        counts[item.resource.kind] = counts.get(item.resource.kind, 0) + 1
+    return ", ".join(f"{kind}={count}" for kind, count in sorted(counts.items()))
+
+
+def _raw_classified_resources(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None,
+) -> list:
+    if classification:
+        return [item.resource for item in classification.raw_k8s]
+    if not inventory or not inventory.resources:
+        return []
+    return inventory.resources
 
 
 def _unknowns(inventory: NormalizedInventory | None) -> str:
@@ -419,8 +471,15 @@ def _unknowns(inventory: NormalizedInventory | None) -> str:
     )
 
 
-def _resource_steps(inventory: NormalizedInventory | None, kind: str, section: str) -> str:
-    resources = [item for item in inventory.resources if item.kind == kind] if inventory else []
+def _resource_steps(
+    inventory: NormalizedInventory | None,
+    kind: str,
+    section: str,
+    classification: ClassificationSummary | None = None,
+) -> str:
+    resources = [
+        item for item in _raw_classified_resources(inventory, classification) if item.kind == kind
+    ]
     if not resources:
         return _placeholder_step(section, f"{kind} recreation")
     blocks = []
@@ -432,7 +491,7 @@ def _resource_steps(inventory: NormalizedInventory | None, kind: str, section: s
             "{{target_namespace}}\"\n"
             "```\n\n"
             f"**Expected output:** {kind} `{resource.name}` is represented in generated manifests "
-            "after Phase 4+ normalization.\n\n"
+            "after Phase 5 classification and normalization.\n\n"
             f"**Evidence:** {inventory.source}:{inventory.snapshot_id}:{resource.entity_key or resource.name}"
         )
     return "\n\n---\n\n".join(blocks)
@@ -459,15 +518,16 @@ def _helm_steps(inventory: NormalizedInventory | None) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def _raw_kubernetes_steps(inventory: NormalizedInventory | None) -> str:
+def _raw_kubernetes_steps(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None = None,
+) -> str:
     resources = (
         [
             item
-            for item in inventory.resources
+            for item in _raw_classified_resources(inventory, classification)
             if item.kind not in {"ConfigMap", "PersistentVolumeClaim", "Ingress"}
         ]
-        if inventory
-        else []
     )
     if not resources:
         return _placeholder_step("4.6", "Raw Kubernetes recreation")
@@ -495,7 +555,7 @@ def _evidence_references(
     mcp_attempted = ", ".join(mcp_sources_attempted) if mcp_sources_attempted else "none"
     if not inventory:
         return (
-            "- artifact.json: Phase 4 local artifact manifest.\n"
+            "- artifact.json: Phase 5 local artifact manifest.\n"
             f"- Snapshot sources attempted: {snapshot_attempted}.\n"
             f"- MCP sources attempted: {mcp_attempted}."
         )
@@ -517,8 +577,12 @@ def _source_refs(source_name: str, mcp_sources_attempted: list[str]) -> str:
     return f"  - artifact.json#mcp.sources_attempted[{source_name}]"
 
 
-def _resource_inventory_yaml(inventory: NormalizedInventory | None) -> str:
-    if not inventory or not inventory.resources:
+def _resource_inventory_yaml(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None = None,
+) -> str:
+    resources = _raw_classified_resources(inventory, classification)
+    if not resources:
         return "  []"
     return "\n".join(
         "  - kind: {kind}\n"
@@ -532,7 +596,78 @@ def _resource_inventory_yaml(inventory: NormalizedInventory | None) -> str:
             source=resource.source,
             entity_key=resource.entity_key or "",
         )
-        for resource in inventory.resources
+        for resource in resources
+    )
+
+
+def _excluded_resources_yaml(classification: ClassificationSummary | None) -> str:
+    if not classification or not classification.excluded:
+        return "  []"
+    return _classified_resources_yaml(classification.excluded)
+
+
+def _excluded_resources_markdown(classification: ClassificationSummary | None) -> str:
+    if not classification or not classification.excluded:
+        return "- No blocked or out-of-scope resources were observed."
+    lines = []
+    for item in classification.excluded:
+        lines.append(
+            f"- {item.resource.kind}/{item.resource.name} "
+            f"namespace={item.resource.namespace or '<cluster>'} reason={item.reason}"
+        )
+    return "\n".join(lines)
+
+
+def _classification_manifest(classification: ClassificationSummary | None) -> dict[str, Any]:
+    if not classification:
+        return {
+            "enabled": False,
+            "helm_managed_count": 0,
+            "raw_k8s_count": 0,
+            "excluded_count": 0,
+            "warning_only_count": 0,
+            "resources": [],
+            "warnings": [],
+        }
+    return {
+        "enabled": True,
+        "namespace": classification.namespace,
+        "helm_managed_count": classification.helm_managed_count,
+        "raw_k8s_count": classification.raw_k8s_count,
+        "excluded_count": classification.excluded_count,
+        "warning_only_count": classification.warning_only_count,
+        "resources": [
+            {
+                "kind": item.resource.kind,
+                "name": item.resource.name,
+                "namespace": item.resource.namespace,
+                "category": item.category.value,
+                "reason": item.reason,
+                "evidence": item.evidence,
+                "helm_release_name": item.helm_release_name,
+            }
+            for item in classification.resources
+        ],
+        "warnings": classification.warnings,
+    }
+
+
+def _classified_resources_yaml(resources: list[ClassifiedResource]) -> str:
+    return "\n".join(
+        "  - kind: {kind}\n"
+        "    name: {name}\n"
+        "    namespace: {namespace}\n"
+        "    category: {category}\n"
+        "    reason: {reason}\n"
+        "    helm_release_name: {helm_release_name}".format(
+            kind=item.resource.kind,
+            name=item.resource.name,
+            namespace=item.resource.namespace,
+            category=item.category.value,
+            reason=item.reason,
+            helm_release_name=item.helm_release_name or "",
+        )
+        for item in resources
     )
 
 
@@ -576,7 +711,7 @@ def _write_placeholder_pdf(path: Path, markdown_content: str) -> None:
         for line in markdown_content.splitlines()
         if line.startswith("#") and line.strip("# ").strip()
     ]
-    lines = ["BOS Genesis MoP Creation Agent", "Phase 4 PDF Placeholder", *headings[:30]]
+    lines = ["BOS Genesis MoP Creation Agent", "Phase 5 PDF Placeholder", *headings[:30]]
     content_stream = _pdf_text_stream(lines)
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",

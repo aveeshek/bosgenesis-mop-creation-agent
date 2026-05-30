@@ -58,6 +58,9 @@ def test_mcp_enrichment_builds_live_inventory_without_raw_cluster_tools() -> Non
     assert result.inventory is not None
     assert result.inventory.resource_count == 1
     assert result.inventory.helm_release_count == 1
+    assert result.inventory.helm_releases[0].normalized_payload["manifest"]["manifest"].startswith(
+        "apiVersion: apps/v1"
+    )
     assert result.sources_attempted == [
         "k8s_inspector_mcp",
         "helm_manager_mcp",
