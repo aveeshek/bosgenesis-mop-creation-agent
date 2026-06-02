@@ -38,7 +38,7 @@ The generated PDF MoP must allow a human operator to recreate source namespace r
 - Generate LLM/agent-readable Markdown installation notes in local storage.
 - Integrate with Codex as an on-demand MCP server for iterative refinement.
 - Run as standalone REST-triggered autonomous agent when Codex is not driving the reasoning loop.
-- Use LangGraph with LangChain and GPT-4.1 mini, or configured equivalent model, for standalone reasoning.
+- Use LangGraph with LangChain and a configured LLM profile for standalone reasoning.
 - Support `platform-only` mode for Kubernetes and Helm recreation steps.
 - Support `application` mode for metadata-only schema/topology recreation guidance.
 - Store MoP metadata and content in MongoDB when enabled.
@@ -91,7 +91,7 @@ The generated PDF MoP must allow a human operator to recreate source namespace r
 | FR-19 | Return generated file metadata and optional content to caller. |
 | FR-20 | Support `application` mode metadata-only schema/topology output for PostgreSQL, ClickHouse, MongoDB, Redis, and Kafka where approved evidence exists. |
 | FR-21 | Validate generated artifacts for secret leakage, namespace rewrite, blocked resources, production data leakage, and required sections before publication. |
-| FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, GPT-4.1 mini or configured equivalent, and LangMem-backed memory. |
+| FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and LangMem-backed memory. |
 
 ## 4. Non-Functional Requirements
 
@@ -141,6 +141,10 @@ Application mode must not export rows, documents, messages, cache values, files,
 
 ### POST `/mop-creation/generate`
 
+Generation is asynchronous. `POST /mop-creation/generate` starts a run and
+returns HTTP 202 with `status=accepted`. The caller must poll
+`GET /mop-creation/{mop_id}` until the status becomes `generated` or `failed`.
+
 Request:
 
 ```json
@@ -164,13 +168,37 @@ Response:
 
 ```json
 {
-  "status": "success",
+  "status": "accepted",
   "mop_id": "mop-uuid",
   "run_id": "run-uuid",
   "correlation_id": "correlation-uuid",
   "source_namespace": "bosgenesis",
   "target_namespace": "bosgenesis-copy-dev",
-  "local_file_path": "/data/mops/mop-bosgenesis-to-bosgenesis-copy-dev-20260522.pdf",
+  "local_file_path": "",
+  "mongo_saved": false,
+  "qdrant_reference_count": 0,
+  "qdrant_lookup_status": "not_executed",
+  "resource_count": 0,
+  "helm_release_count": 0,
+  "helm_managed_resource_count": 0,
+  "raw_k8s_resource_count": 0,
+  "excluded_resource_count": 0,
+  "warning_only_resource_count": 0,
+  "warning_count": 0
+}
+```
+
+Polling response after completion:
+
+```json
+{
+  "status": "generated",
+  "mop_id": "mop-uuid",
+  "run_id": "run-uuid",
+  "correlation_id": "correlation-uuid",
+  "source_namespace": "bosgenesis",
+  "target_namespace": "bosgenesis-copy-dev",
+  "local_file_path": "/data/mops/<mop-id>/mop-bosgenesis-to-bosgenesis-copy-dev-20260522.pdf",
   "mongo_saved": true,
   "qdrant_reference_count": 3,
   "qdrant_lookup_status": "references_found",
@@ -290,7 +318,7 @@ memory:
 llm:
   standalone_enabled: true
   framework: langgraph-langchain
-  default_model: gpt-4.1-mini
+  default_model: gemma4:26b
 ```
 
 ## 10. Human PDF MoP Output Structure

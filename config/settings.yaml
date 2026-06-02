@@ -44,4 +44,35 @@ observability:
 llm:
   standalone_enabled: true
   framework: langgraph-langchain
-  default_model: gpt-4.1-mini
+  default_model: gemma4:26b
+  repair_suggestions_enabled: false
+  provider: ollama
+  azure_endpoint:
+  azure_deployment:
+  azure_api_version: 2024-12-01-preview
+  temperature: 0.2
+  max_tokens: 800
+  minimum_confidence: 0.85
+  model_profiles:
+    gemma4:26b:
+      provider: ollama
+      model: gemma4:26b
+      base_url: http://ollama.bosgenesis.svc.cluster.local:11434
+      max_tokens: 2048
+    gpt-4.1-mini:
+      provider: azure_openai
+      azure_deployment: bos-trainium-sigma-gpt-4.1-mini
+      azure_api_version: 2024-12-01-preview
+    gpt-5:
+      provider: azure_openai
+      azure_deployment: gpt-5
+      azure_api_version: 2024-12-01-preview
+    gemma4:
+      provider: ollama
+      model: gemma4:26b
+      base_url: http://ollama.bosgenesis.svc.cluster.local:11434
+      max_tokens: 2048
+    llama70b:
+      provider: ollama
+      model: llama3.3:70b
+      base_url: http://ollama-llama70b.bosgenesis.svc.cluster.local:11434

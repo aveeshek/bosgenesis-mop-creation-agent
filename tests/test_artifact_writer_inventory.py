@@ -91,14 +91,19 @@ def test_artifact_writer_uses_phase5_classification_for_safe_resource_lists(tmp_
     manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
     installation_notes = Path(result.installation_notes_path).read_text(encoding="utf-8")
 
-    assert manifest["artifact_type"] == "phase5_classified_mop_artifact"
+    assert manifest["artifact_type"] == "phase6_reconstruction_mop_artifact"
     assert manifest["classification"]["raw_k8s_count"] == 1
     assert manifest["classification"]["excluded_count"] == 1
     assert manifest["classification"]["warning_only_count"] == 1
+    assert manifest["reconstruction"]["raw_manifest_count"] == 1
     assert "kind: Deployment" in installation_notes
     assert "kind: Secret" in installation_notes
     assert "raw_kubernetes_resources:\n  - kind: Deployment" in installation_notes
     assert "excluded_resources:\n  - kind: Secret" in installation_notes
+    assert "kubectl apply -f generated/deployment-api.yaml" in installation_notes
+    generated_manifest = Path(result.run_directory_path) / "generated" / "deployment-api.yaml"
+    assert generated_manifest.is_file()
+    assert "namespace: bosgenesis-copy-dev" in generated_manifest.read_text(encoding="utf-8")
     assert "api-started" not in installation_notes.split("raw_kubernetes_resources:", 1)[1].split(
         "application_targets:",
         1,

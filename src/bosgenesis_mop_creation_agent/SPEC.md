@@ -9,7 +9,7 @@
 The package must support:
 
 - Codex-integrated on-demand MCP mode for iterative generation and refinement;
-- standalone REST-triggered mode using LangGraph/LangChain and GPT-4.1 mini or configured equivalent model;
+- standalone REST-triggered mode using LangGraph/LangChain and a configured LLM profile;
 - `platform-only` generation mode;
 - `application` generation mode with metadata-only schema/topology output;
 - local artifact generation for both the human MoP PDF and Markdown installation notes;

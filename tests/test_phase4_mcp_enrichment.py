@@ -24,11 +24,37 @@ def _service(transport: InMemoryMcpTransport) -> McpEnrichmentService:
     )
 
 
+def _detail_service(transport: InMemoryMcpTransport) -> McpEnrichmentService:
+    from bosgenesis_mop_creation_agent.config.settings import K8sInspectorSettings
+
+    endpoint = _endpoint()
+    return McpEnrichmentService(
+        k8s_client=K8sInspectorClient.from_settings(
+            K8sInspectorSettings(
+                enabled=True,
+                endpoint="http://mcp.example.local/mcp",
+            ),
+            transport,
+        ),
+        helm_client=HelmManagerClient.from_settings(endpoint, transport),
+        data_ingestion_client=DataIngestionClient.from_settings(endpoint, transport),
+    )
+
+
 def test_mcp_enrichment_builds_live_inventory_without_raw_cluster_tools() -> None:
     transport = InMemoryMcpTransport(
         responses={
             "k8s_list_deployments": {
                 "items": [{"metadata": {"name": "mop-api"}, "namespace": "bosgenesis"}]
+            },
+            "k8s_get_resource": {
+                "status": "ok",
+                "resource": {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {"name": "mop-api", "namespace": "bosgenesis"},
+                    "spec": {"replicas": 1},
+                },
             },
             "helm_list_releases": {
                 "releases": [
@@ -69,6 +95,7 @@ def test_mcp_enrichment_builds_live_inventory_without_raw_cluster_tools() -> Non
     called_tools = {call[1] for call in transport.calls}
     assert "tools/list" in called_tools
     assert "k8s_list_deployments" in called_tools
+    assert "k8s_get_resource" in called_tools
     assert "helm_list_releases" in called_tools
     assert "kubectl" not in called_tools
     assert "helm" not in called_tools
@@ -147,3 +174,59 @@ def test_mcp_enrichment_skips_tools_that_are_not_advertised() -> None:
     assert "k8s_list_daemonsets" not in called_tools
     assert "k8s_list_configmaps" not in called_tools
     assert "data_ingestion_latest_scan" not in called_tools
+
+
+def test_mcp_enrichment_fetches_full_resource_details_when_available() -> None:
+    transport = InMemoryMcpTransport(
+        responses={
+            "k8s_list_deployments": {
+                "items": [{"metadata": {"name": "api"}, "namespace": "bosgenesis"}]
+            },
+            "k8s_get_resource": {
+                "status": "ok",
+                "resource": {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {"name": "api", "namespace": "bosgenesis"},
+                    "spec": {"replicas": 1},
+                    "status": {"availableReplicas": 1},
+                },
+            },
+            "helm_list_releases": {"releases": []},
+            "data_ingestion_health": {"status": "ok"},
+        }
+    )
+
+    result = _detail_service(transport).enrich(
+        namespace="bosgenesis",
+        correlation_id="phase61-test",
+        snapshot_inventory=None,
+    )
+
+    assert result.inventory is not None
+    assert result.inventory.resources[0].normalized_payload["spec"] == {"replicas": 1}
+    called_tools = [call[1] for call in transport.calls]
+    assert "k8s_get_resource" in called_tools
+
+
+def test_mcp_enrichment_detail_mode_warns_when_tool_unavailable() -> None:
+    transport = InMemoryMcpTransport(
+        available_tools={"k8s_list_deployments", "helm_list_releases", "data_ingestion_health"},
+        responses={
+            "k8s_list_deployments": {
+                "items": [{"metadata": {"name": "api"}, "namespace": "bosgenesis"}]
+            },
+            "helm_list_releases": {"releases": []},
+            "data_ingestion_health": {"status": "ok"},
+        },
+    )
+
+    result = _detail_service(transport).enrich(
+        namespace="bosgenesis",
+        correlation_id="phase61-test",
+        snapshot_inventory=None,
+    )
+
+    assert "k8s_mcp_detail_enrichment_unavailable" in " ".join(result.warnings)
+    called_tools = [call[1] for call in transport.calls]
+    assert "k8s_get_resource" not in called_tools

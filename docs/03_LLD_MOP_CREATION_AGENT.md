@@ -9,7 +9,7 @@
 
 The agent is not an executor. It creates a safe, line-by-line MoP PDF rendered from the approved sample-derived MoP template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, GPT-4.1 mini or configured equivalent, and LangMem-backed short-term, episodic, and knowledge memory.
+The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed short-term, episodic, and knowledge memory.
 
 ## 1. Suggested Project Structure
 
@@ -52,6 +52,11 @@ bosgenesis-mop-creation-agent/
         resource_classifier.py
         helm_detector.py
         safety_classifier.py
+      reconstruction/
+        manifest_normalizer.py
+        helm_values.py
+        command_builder.py
+        planner.py
       retrieval/
         qdrant_reference_finder.py
         component_query_builder.py
@@ -122,8 +127,10 @@ bosgenesis-mop-creation-agent/
 | `retrieval/component_query_builder.py` | Builds component-level Qdrant lookup queries from Helm releases, labels, app names, image names, services, and application-mode metadata. |
 | `retrieval/qdrant_reference_finder.py` | Reads Qdrant for existing vectorized MoP/installation-note references and returns cited matches when enabled. |
 | `retrieval/reference_models.py` | Defines retrieved-reference metadata, score, component identity, source artifact, and citation fields. |
-| `rendering/manifest_normalizer.py` | Cleans manifests, redacts sensitive fields, and rewrites namespace. |
-| `rendering/command_builder.py` | Builds copyable Helm and Kubernetes command blocks. |
+| `reconstruction/manifest_normalizer.py` | Cleans raw Kubernetes manifests, removes runtime metadata/status, and rewrites namespace. |
+| `reconstruction/helm_values.py` | Extracts Helm values evidence and writes redacted values files. |
+| `reconstruction/command_builder.py` | Builds copyable Helm and Kubernetes dry-run, apply/install, validation, and rollback commands. |
+| `reconstruction/planner.py` | Writes generated manifests/values and returns a platform reconstruction plan for rendering. |
 | `rendering/mop_renderer.py` | Builds the sample-derived human MoP document model. |
 | `rendering/pdf_renderer.py` | Renders the human MoP document model to PDF. |
 | `rendering/installation_notes_renderer.py` | Generates LLM/agent-readable Markdown installation notes. |
@@ -135,7 +142,7 @@ bosgenesis-mop-creation-agent/
 | `reasoning/planner.py` | Coordinates deterministic and LLM-assisted reasoning for install order, unknowns, and inference labels. |
 | `llm/langgraph_workflow.py` | Runs standalone REST-triggered autonomous reasoning as a LangGraph workflow with explicit state transitions and repair loops. |
 | `llm/langchain_flow.py` | Provides LangChain model, prompt, and tool adapter helpers used by the LangGraph workflow where useful. |
-| `llm/model_gateway.py` | Encapsulates GPT-4.1 mini or configured equivalent model access. |
+| `llm/model_gateway.py` | Encapsulates configured Azure OpenAI or Ollama model profile access. |
 | `observability/langfuse_tracer.py` | Emits Langfuse traces for prompts, decisions, and generation phases. |
 | `observability/signoz_otel.py` | Emits OpenTelemetry spans and metrics for SigNoz. |
 | `security/redaction.py` | Redacts secrets and sensitive values before prompts, logs, storage, and artifacts. |

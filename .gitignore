@@ -7,3 +7,7 @@ dist/
 build/
 *.egg-info/
 values.credentials.yaml
+certs/*
+!certs/.gitkeep
+!certs/README.md
+!certs/SPEC.md

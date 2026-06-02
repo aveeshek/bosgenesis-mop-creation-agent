@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, status
 
 from bosgenesis_mop_creation_agent.api.mcp import call_mcp_tool, mcp_creation_tools
 from bosgenesis_mop_creation_agent import __version__
@@ -52,7 +52,11 @@ def effective_config(request: Request) -> dict[str, Any]:
     return settings.redacted_dict()
 
 
-@router.post("/mop-creation/generate", response_model=MoPGenerationResponse)
+@router.post(
+    "/mop-creation/generate",
+    response_model=MoPGenerationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGenerationResponse:
     logger.info(
         "mop_generation_requested",
@@ -63,7 +67,7 @@ def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGen
             "external_calls": "governed_mcp_read_only",
         },
     )
-    return _orchestrator(request).generate(request_body)
+    return _orchestrator(request).submit_generation(request_body)
 
 
 @router.get("/mop-creation/latest", response_model=MoPGenerationResponse)
@@ -91,6 +95,28 @@ def get_mop_classification(mop_id: str, request: Request) -> dict[str, Any]:
             detail=f"MoP classification summary not found: {mop_id}",
         )
     return summary
+
+
+@router.get("/mop-creation/{mop_id}/artifacts")
+def get_mop_artifact_index(mop_id: str, request: Request) -> dict[str, Any]:
+    index = _orchestrator(request).artifact_index(mop_id)
+    if index is None:
+        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+    return index
+
+
+@router.get("/mop-creation/{mop_id}/artifacts/preview")
+def preview_mop_artifact(mop_id: str, path: str, request: Request) -> dict[str, Any]:
+    preview = _orchestrator(request).artifact_preview(mop_id, path)
+    if preview is None:
+        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+    if preview.get("status") == "denied":
+        raise HTTPException(status_code=403, detail=preview)
+    if preview.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=preview)
+    if preview.get("status") == "disabled":
+        raise HTTPException(status_code=403, detail=preview)
+    return preview
 
 
 @router.get("/mcp/tools")

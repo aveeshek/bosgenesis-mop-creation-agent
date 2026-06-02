@@ -9,7 +9,7 @@
 
 The agent is not an executor. It creates a safe, line-by-line MoP PDF rendered from the approved sample-derived template, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. It also creates Markdown installation notes for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to refine output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, GPT-4.1 mini or configured equivalent, and LangMem-backed memory to reason about ambiguous next steps.
+The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to refine output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed memory to reason about ambiguous next steps.
 
 ## 1. High-Level Architecture
 
@@ -34,7 +34,7 @@ flowchart LR
     Orchestrator --> Reasoning["Reasoning Layer"]
     Reasoning --> LangGraph["LangGraph Standalone Workflow"]
     LangGraph --> LangChain["LangChain Model/Tool Adapters"]
-    LangChain --> LLM["External LLM: GPT-4.1 mini"]
+    LangChain --> LLM["Configured LLM profile: Azure OpenAI or Ollama"]
     Classifier --> Retrieval["Qdrant Prior Reference Lookup"]
     Retrieval --> Qdrant[("Qdrant Prior MoP/Notes Index")]
     Ingestion["Separate Qdrant Ingestion Agent"] -. "writes vectorized MoPs/notes" .-> Qdrant
@@ -112,7 +112,7 @@ sequenceDiagram
 Runtime invocation:
 
 - Codex-integrated MCP mode: Codex drives iterative generation, critique, and refinement.
-- Standalone REST mode: REST trigger starts an autonomous LangGraph workflow using LangChain adapters, GPT-4.1 mini or a configured equivalent model.
+- Standalone REST mode: REST trigger starts an autonomous LangGraph workflow using LangChain adapters and a configured LLM profile such as GPT-4.1-mini, GPT-5, Gemma4, or Llama70B.
 
 Generation:
 

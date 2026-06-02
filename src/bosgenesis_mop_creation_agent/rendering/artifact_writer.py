@@ -11,7 +11,16 @@ from bosgenesis_mop_creation_agent.classification.models import (
     ClassificationSummary,
     ClassifiedResource,
 )
+from bosgenesis_mop_creation_agent.config.settings import LlmSettings
+from bosgenesis_mop_creation_agent.llm.models import RepairSuggestionResult
+from bosgenesis_mop_creation_agent.llm.repair_suggester import build_repair_suggestions
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.reconstruction.models import (
+    HelmReleasePlan,
+    RawManifestPlan,
+    ReconstructionPlan,
+)
+from bosgenesis_mop_creation_agent.reconstruction.planner import build_reconstruction_plan
 from bosgenesis_mop_creation_agent.sources.snapshot_models import NormalizedInventory
 
 
@@ -46,13 +55,15 @@ class ArtifactWriteResult:
     installation_notes_path: str
     human_mop_content: str
     installation_notes_content: str
+    warnings: list[str]
 
 
 class LocalArtifactWriter:
     """Write snapshot and MCP-enriched artifacts to local storage."""
 
-    def __init__(self, storage_path: str) -> None:
+    def __init__(self, storage_path: str, llm_settings: LlmSettings | None = None) -> None:
         self._storage_path = Path(storage_path)
+        self._llm_settings = llm_settings or LlmSettings()
 
     def write(
         self,
@@ -84,6 +95,20 @@ class LocalArtifactWriter:
         human_mop_pdf_path = run_dir / f"{file_stem}.pdf"
         installation_notes_path = run_dir / f"{file_stem}.installation.md"
         artifact_manifest_path = run_dir / "artifact.json"
+        reconstruction = build_reconstruction_plan(
+            inventory=inventory,
+            classification=classification,
+            target_namespace=request.target_namespace,
+            generated_dir=generated_dir,
+            values_dir=values_dir,
+        )
+        repair_suggestions = build_repair_suggestions(
+            settings=self._llm_settings,
+            reconstruction=reconstruction,
+            classification=classification,
+            correlation_id=correlation_id,
+        )
+        all_warnings = [*warnings, *reconstruction.warnings, *repair_suggestions.warnings]
 
         context = self._build_context(
             mop_id=mop_id,
@@ -92,9 +117,11 @@ class LocalArtifactWriter:
             source_namespace=source_namespace,
             request=request,
             created_at=created_at,
-            warnings=warnings,
+            warnings=all_warnings,
             inventory=inventory,
             classification=classification,
+            reconstruction=reconstruction,
+            repair_suggestions=repair_suggestions,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
             mcp_sources_attempted=mcp_sources_attempted or [],
             run_dir=run_dir,
@@ -117,7 +144,7 @@ class LocalArtifactWriter:
         _write_placeholder_pdf(human_mop_pdf_path, human_mop_content)
 
         manifest = {
-            "artifact_type": "phase5_classified_mop_artifact",
+            "artifact_type": "phase6_reconstruction_mop_artifact",
             "schema_version": "1.0",
             "mop_id": mop_id,
             "run_id": run_id,
@@ -141,6 +168,8 @@ class LocalArtifactWriter:
                 "sources_attempted": snapshot_sources_attempted or [],
             },
             "classification": _classification_manifest(classification),
+            "reconstruction": _reconstruction_manifest(reconstruction),
+            "llm_repair_suggestions": repair_suggestions.model_dump(mode="json"),
             "mcp": {
                 "sources_attempted": mcp_sources_attempted or [],
                 "live_enrichment_enabled": bool(mcp_sources_attempted),
@@ -155,7 +184,7 @@ class LocalArtifactWriter:
                 "evidence_dir": str(evidence_dir),
             },
             "required_human_mop_sections": list(REQUIRED_HUMAN_MOP_SECTIONS),
-            "warnings": warnings,
+            "warnings": all_warnings,
         }
         artifact_manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True),
@@ -170,6 +199,7 @@ class LocalArtifactWriter:
             installation_notes_path=str(installation_notes_path),
             human_mop_content=human_mop_content,
             installation_notes_content=installation_notes_content,
+            warnings=all_warnings,
         )
 
     def _build_context(
@@ -184,6 +214,8 @@ class LocalArtifactWriter:
         warnings: list[str],
         inventory: NormalizedInventory | None,
         classification: ClassificationSummary | None,
+        reconstruction: ReconstructionPlan,
+        repair_suggestions: RepairSuggestionResult,
         snapshot_sources_attempted: list[str],
         mcp_sources_attempted: list[str],
         run_dir: Path,
@@ -196,8 +228,8 @@ class LocalArtifactWriter:
         warning_yaml = "\n".join(f"  - {warning}" for warning in warnings) or "  []"
         empty_yaml_list = "  []"
         empty_phase_commands = (
-            "  - step_id: phase5-placeholder\n"
-            "    title: Phase 5 placeholder\n"
+            "  - step_id: phase6-placeholder\n"
+            "    title: Phase 6 placeholder\n"
             "    type: validation\n"
             "    depends_on: []\n"
             "    evidence_refs: []\n"
@@ -205,9 +237,9 @@ class LocalArtifactWriter:
             "    inference:\n"
             "      label: human_input_required\n"
             "      confidence: low\n"
-            "      rationale: Phase 5 classifies inventory into safe reconstruction groups.\n"
+            "      rationale: Phase 6 generates platform reconstruction commands from classified inventory.\n"
             "    command: |\n"
-            "      echo \"Phase 5 placeholder only\"\n"
+            "      echo \"Phase 6 placeholder only\"\n"
             "    expected: No target system changes are made.\n"
             "    on_failure: STOP and inspect the local artifact bundle.\n"
             "    mutates_target: false\n"
@@ -217,7 +249,7 @@ class LocalArtifactWriter:
         return {
             "mop_title": f"Namespace Recreation MoP - {source_namespace} to {request.target_namespace}",
             "mop_id": mop_id,
-            "mop_version": "0.5.0-phase5",
+            "mop_version": "0.6.0-phase6",
             "generated_at": created_at.isoformat(),
             "reviewed_by_placeholder": "TBD",
             "change_ticket_placeholder": "TBD",
@@ -234,13 +266,13 @@ class LocalArtifactWriter:
             ),
             "run_id": run_id,
             "correlation_id": correlation_id,
-            "change_reason": "Phase 5 classified snapshot plus governed MCP enrichment artifact generation test.",
+            "change_reason": "Phase 6 platform reconstruction artifact generation with normalized raw manifests and Helm value files.",
             "helm_release_count": str(inventory.helm_release_count if inventory else 0),
             "helm_release_summary": _helm_summary(inventory),
             "raw_k8s_resource_count": str(_raw_count(inventory, classification)),
             "raw_k8s_summary": _resource_summary(inventory, classification),
             "application_target_count": "0",
-            "application_summary": "Application mode metadata discovery is not executed in Phase 5.",
+            "application_summary": "Application mode metadata discovery is not executed in Phase 6.",
             "excluded_resource_count": str(classification.excluded_count if classification else 0),
             "excluded_summary": _excluded_summary(classification),
             "warning_count": str(len(warnings)),
@@ -253,43 +285,50 @@ class LocalArtifactWriter:
             "expected_cluster_context": "TBD",
             "artifact_bundle_path": str(run_dir),
             "backup_dir": str(evidence_dir),
-            "helm_backup_commands": "echo \"Phase 5 placeholder: Helm values are MCP evidence only\"",
+            "helm_backup_commands": _helm_backup_commands(reconstruction),
             "target_namespace_preparation_steps": _placeholder_step("4.1", "Target namespace preparation"),
             "secret_placeholder_rows": "| TBD | TBD | TBD | Pending |",
-            "secret_creation_guidance": "No secret values are read or generated in Phase 5.",
-            "configmap_execution_steps": _resource_steps(inventory, "ConfigMap", "4.3", classification),
-            "pvc_execution_steps": _resource_steps(
-                inventory,
+            "secret_creation_guidance": "No secret values are read or generated in Phase 6.",
+            "configmap_execution_steps": _resource_steps_by_plan(reconstruction, "ConfigMap", "4.3"),
+            "pvc_execution_steps": _resource_steps_by_plan(
+                reconstruction,
                 "PersistentVolumeClaim",
                 "4.4",
-                classification,
             ),
-            "helm_release_execution_steps": _helm_steps(inventory),
-            "raw_kubernetes_execution_steps": _raw_kubernetes_steps(inventory, classification),
-            "ingress_execution_steps": _resource_steps(inventory, "Ingress", "4.7", classification),
+            "helm_release_execution_steps": _helm_steps_by_plan(reconstruction),
+            "raw_kubernetes_execution_steps": _raw_kubernetes_steps_by_plan(reconstruction),
+            "ingress_execution_steps": _resource_steps_by_plan(reconstruction, "Ingress", "4.7"),
             "application_mode_execution_steps": _placeholder_step(
                 "4.8",
                 "Application metadata recreation",
             ),
-            "helm_validation_commands": "echo \"Phase 5 placeholder: validate enriched Helm evidence manually\"",
-            "ingress_validation_commands": "echo \"Phase 5 placeholder: validate enriched ingress evidence manually\"",
+            "helm_validation_commands": _join_commands(
+                plan.validation_command for plan in reconstruction.helm_releases
+            ),
+            "ingress_validation_commands": _join_commands(
+                plan.validation_command
+                for plan in reconstruction.raw_manifests
+                if plan.kind == "Ingress"
+            ),
             "application_mode_validation_steps": _placeholder_step(
                 "5.5",
                 "Application metadata validation",
             ),
-            "helm_rollback_commands": "echo \"Phase 5 placeholder: rollback commands require synthesis phase\"",
-            "raw_kubernetes_rollback_commands": (
-                "echo \"Phase 5 placeholder: raw Kubernetes rollback requires synthesis phase\""
+            "helm_rollback_commands": _join_commands(
+                plan.rollback_command for plan in reversed(reconstruction.helm_releases)
             ),
-            "application_mode_rollback_steps": "No application metadata was created in Phase 5.",
+            "raw_kubernetes_rollback_commands": _join_commands(
+                plan.rollback_command for plan in reversed(reconstruction.raw_manifests)
+            ),
+            "application_mode_rollback_steps": "No application metadata was created in Phase 6.",
             "evidence_references": _evidence_references(
                 inventory,
                 snapshot_sources_attempted,
                 mcp_sources_attempted,
             ),
-            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 5.",
+            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 6.",
             "inference_labels_and_rationale": (
-                "- human_input_required / low: all operational steps are placeholders."
+                _repair_suggestions_markdown(repair_suggestions)
             ),
             "excluded_resources": _excluded_resources_markdown(classification),
             "generation_status": "generated",
@@ -315,45 +354,51 @@ class LocalArtifactWriter:
             "verify_access_expected_outcomes_yaml": "  - Snapshot and MCP inventory evidence is represented in generated artifacts.",
             "verify_access_stop_conditions_yaml": "  - Local artifact directory is not writable.",
             "verify_access_evidence_refs_yaml": "  - artifact.json",
-            "target_namespace_commands_yaml": empty_phase_commands,
-            "target_namespace_expected_outcomes_yaml": "  - No namespace mutation is performed.",
-            "target_namespace_rollback_yaml": "  - No rollback required.",
+            "target_namespace_commands_yaml": _target_namespace_commands_yaml(request.target_namespace),
+            "target_namespace_expected_outcomes_yaml": f"  - Namespace {request.target_namespace} exists.",
+            "target_namespace_rollback_yaml": "  - Delete the target namespace only if it was created for this change and cleanup is approved.",
             "target_namespace_evidence_refs_yaml": "  - artifact.json",
             "secret_manual_inputs_yaml": empty_yaml_list,
             "secret_placeholder_commands_yaml": empty_phase_commands,
             "secret_expected_outcomes_yaml": "  - No secrets are generated or copied.",
             "secret_evidence_refs_yaml": "  - artifact.json",
-            "configmap_commands_yaml": empty_phase_commands,
-            "configmap_expected_outcomes_yaml": "  - No ConfigMaps are applied.",
-            "configmap_rollback_yaml": "  - No rollback required.",
+            "configmap_commands_yaml": _raw_commands_yaml(reconstruction, {"ConfigMap"}),
+            "configmap_expected_outcomes_yaml": "  - ConfigMaps are accepted by dry-run and then applied when approved.",
+            "configmap_rollback_yaml": _raw_rollback_yaml(reconstruction, {"ConfigMap"}),
             "configmap_evidence_refs_yaml": "  - artifact.json",
-            "pvc_commands_yaml": empty_phase_commands,
-            "pvc_expected_outcomes_yaml": "  - No PVCs are applied.",
-            "pvc_rollback_yaml": "  - No rollback required.",
+            "pvc_commands_yaml": _raw_commands_yaml(reconstruction, {"PersistentVolumeClaim"}),
+            "pvc_expected_outcomes_yaml": "  - PVCs are accepted by dry-run and then applied when approved.",
+            "pvc_rollback_yaml": _raw_rollback_yaml(reconstruction, {"PersistentVolumeClaim"}),
             "pvc_evidence_refs_yaml": "  - artifact.json",
-            "helm_commands_yaml": empty_phase_commands,
-            "helm_expected_outcomes_yaml": "  - Helm release recreation guidance exists for stored or MCP-enriched releases.",
-            "helm_rollback_yaml": "  - No rollback required.",
+            "helm_commands_yaml": _helm_commands_yaml(reconstruction),
+            "helm_expected_outcomes_yaml": "  - Helm dry-runs render successfully before install commands are executed.",
+            "helm_rollback_yaml": _helm_rollback_yaml(reconstruction),
             "helm_unknowns_yaml": (
-                "  - Helm install command synthesis requires a later phase."
+                _helm_unknowns_yaml(reconstruction)
             ),
-            "raw_kubernetes_commands_yaml": empty_phase_commands,
+            "raw_kubernetes_commands_yaml": _raw_commands_yaml(
+                reconstruction,
+                exclude={"ConfigMap", "PersistentVolumeClaim", "Ingress"},
+            ),
             "raw_kubernetes_expected_outcomes_yaml": (
-                "  - Raw Kubernetes recreation guidance exists for stored or MCP-enriched resources."
+                "  - Raw Kubernetes manifests are accepted by server-side dry-run before apply."
             ),
-            "raw_kubernetes_rollback_yaml": "  - No rollback required.",
+            "raw_kubernetes_rollback_yaml": _raw_rollback_yaml(
+                reconstruction,
+                exclude={"ConfigMap", "PersistentVolumeClaim", "Ingress"},
+            ),
             "raw_kubernetes_evidence_refs_yaml": "  - artifact.json",
-            "ingress_commands_yaml": empty_phase_commands,
-            "ingress_expected_outcomes_yaml": "  - No ingress resources are applied.",
-            "ingress_rollback_yaml": "  - No rollback required.",
+            "ingress_commands_yaml": _raw_commands_yaml(reconstruction, {"Ingress"}),
+            "ingress_expected_outcomes_yaml": "  - Ingress resources are accepted by dry-run and then applied when approved.",
+            "ingress_rollback_yaml": _raw_rollback_yaml(reconstruction, {"Ingress"}),
             "ingress_evidence_refs_yaml": "  - artifact.json",
             "application_metadata_commands_yaml": empty_phase_commands,
             "application_metadata_expected_outcomes_yaml": "  - No schemas, topics, or topology are created.",
             "application_metadata_rollback_yaml": "  - No rollback required.",
             "application_metadata_evidence_refs_yaml": "  - artifact.json",
-            "validation_commands_yaml": empty_phase_commands,
+            "validation_commands_yaml": _validation_commands_yaml(reconstruction),
             "validation_expected_outcomes_yaml": (
-                "  - PDF, human MoP markdown, installation notes, and artifact metadata exist."
+                "  - Generated files exist and target namespace dry-run commands succeed."
             ),
             "validation_stop_conditions_yaml": "  - Required MoP sections are missing.",
             "validation_evidence_refs_yaml": "  - artifact.json",
@@ -362,12 +407,10 @@ class LocalArtifactWriter:
                 "    expected: true\n"
                 "    action_if_failed: STOP"
             ),
-            "rollback_trigger_conditions_yaml": "  - Artifact publication fails.",
-            "namespace_cleanup_rollback_yaml": "  - Not applicable in Phase 5.",
+            "rollback_trigger_conditions_yaml": "  - Any approved install/apply command fails after mutation begins.",
+            "namespace_cleanup_rollback_yaml": "  - Delete target namespace only with explicit approval.",
             "inferences_yaml": (
-                "  - label: human_input_required\n"
-                "    confidence: low\n"
-                "    rationale: Inventory is classified before any reconstruction guidance is emitted."
+                _inferences_yaml(repair_suggestions)
             ),
             "unknowns_yaml": _unknowns_yaml(inventory),
             "confidence_summary_yaml": (
@@ -399,11 +442,303 @@ def _placeholder_step(section: str, title: str) -> str:
     return (
         f"**Step {section} - {title} placeholder**\n\n"
         "```bash\n"
-        f"echo \"Phase 5 placeholder: {title}\"\n"
+        f"echo \"Phase 6 placeholder: {title}\"\n"
         "```\n\n"
         "**Expected output:** No target system changes are made.\n\n"
         "> STOP if this placeholder appears in a production execution package."
     )
+
+
+def _resource_steps_by_plan(reconstruction: ReconstructionPlan, kind: str, section: str) -> str:
+    plans = [plan for plan in reconstruction.raw_manifests if plan.kind == kind]
+    if not plans:
+        return _placeholder_step(section, f"{kind} recreation")
+    blocks = []
+    for index, plan in enumerate(plans, start=1):
+        blocks.append(
+            f"**Step {section}.{index} - Apply {kind} `{plan.name}`**\n\n"
+            "Dry-run first:\n\n"
+            "```bash\n"
+            f"{plan.dry_run_command}\n"
+            "```\n\n"
+            "Apply after approval:\n\n"
+            "```bash\n"
+            f"{plan.apply_command}\n"
+            "```\n\n"
+            f"**Expected output:** {kind} `{plan.name}` exists in namespace "
+            f"`{plan.namespace}`.\n\n"
+            f"**Manifest:** `{plan.relative_path}`\n\n"
+            f"**Evidence:** {plan.evidence_ref}"
+            f"{_warning_suffix(plan.warnings)}"
+        )
+    return "\n\n---\n\n".join(blocks)
+
+
+def _helm_steps_by_plan(reconstruction: ReconstructionPlan) -> str:
+    if not reconstruction.helm_releases:
+        return _placeholder_step("4.5", "Helm release recreation")
+    blocks = []
+    for index, plan in enumerate(reconstruction.helm_releases, start=1):
+        blocks.append(
+            f"**Step 4.5.{index} - Install Helm release `{plan.release_name}`**\n\n"
+            "Dry-run first:\n\n"
+            "```bash\n"
+            f"{plan.dry_run_command}\n"
+            "```\n\n"
+            "Install after approval:\n\n"
+            "```bash\n"
+            f"{plan.install_command}\n"
+            "```\n\n"
+            f"**Expected output:** Helm release `{plan.release_name}` is deployed in "
+            f"namespace `{reconstruction.target_namespace}`.\n\n"
+            f"**Values:** `{plan.values_relative_path}`\n\n"
+            f"**Evidence:** {plan.evidence_ref}"
+            f"{_warning_suffix(plan.warnings)}"
+        )
+    return "\n\n---\n\n".join(blocks)
+
+
+def _raw_kubernetes_steps_by_plan(reconstruction: ReconstructionPlan) -> str:
+    plans = [
+        plan
+        for plan in reconstruction.raw_manifests
+        if plan.kind not in {"ConfigMap", "PersistentVolumeClaim", "Ingress"}
+    ]
+    if not plans:
+        return _placeholder_step("4.6", "Raw Kubernetes recreation")
+    blocks = []
+    for index, plan in enumerate(plans, start=1):
+        blocks.append(
+            f"**Step 4.6.{index} - Apply {plan.kind} `{plan.name}`**\n\n"
+            "```bash\n"
+            f"{plan.dry_run_command}\n"
+            f"{plan.apply_command}\n"
+            "```\n\n"
+            f"**Expected output:** {plan.kind} `{plan.name}` exists in namespace "
+            f"`{plan.namespace}`.\n\n"
+            f"**Manifest:** `{plan.relative_path}`\n\n"
+            f"**Evidence:** {plan.evidence_ref}"
+            f"{_warning_suffix(plan.warnings)}"
+        )
+    return "\n\n---\n\n".join(blocks)
+
+
+def _helm_backup_commands(reconstruction: ReconstructionPlan) -> str:
+    if not reconstruction.helm_releases:
+        return "echo \"No Helm releases were found for backup reference\""
+    return "\n".join(
+        f"echo \"Review redacted Helm values: {plan.values_relative_path}\""
+        for plan in reconstruction.helm_releases
+    )
+
+
+def _target_namespace_commands_yaml(target_namespace: str) -> str:
+    return (
+        "  - step_id: prepare-target-namespace\n"
+        "    title: Ensure target namespace exists\n"
+        "    type: namespace\n"
+        "    depends_on: [verify_access]\n"
+        "    evidence_refs: []\n"
+        "    qdrant_refs: []\n"
+        "    inference:\n"
+        "      label: human_input_required\n"
+        "      confidence: high\n"
+        "      rationale: Target namespace is supplied by the generation request.\n"
+        "    command: |\n"
+        f"      kubectl get namespace {target_namespace} || kubectl create namespace {target_namespace}\n"
+        f"      kubectl get namespace {target_namespace}\n"
+        f"    expected: Namespace {target_namespace} exists.\n"
+        "    on_failure: STOP and confirm namespace creation is approved.\n"
+        "    mutates_target: true\n"
+        "    requires_human_approval: true"
+    )
+
+
+def _helm_commands_yaml(reconstruction: ReconstructionPlan) -> str:
+    if not reconstruction.helm_releases:
+        return "  []"
+    return "\n".join(_helm_command_yaml(plan, index) for index, plan in enumerate(reconstruction.helm_releases, 1))
+
+
+def _helm_command_yaml(plan: HelmReleasePlan, index: int) -> str:
+    return (
+        f"  - step_id: helm-{index}-{plan.release_name}\n"
+        f"    title: Install Helm release {plan.release_name}\n"
+        "    type: helm\n"
+        "    depends_on: [apply_configmaps, apply_pvcs, prepare_secret_placeholders]\n"
+        f"    evidence_refs: [{plan.evidence_ref}]\n"
+        "    qdrant_refs: []\n"
+        "    inference:\n"
+        "      label: observed\n"
+        "      confidence: medium\n"
+        "      rationale: Release was discovered from Helm evidence; values are redacted.\n"
+        "    command: |\n"
+        f"      {plan.dry_run_command}\n"
+        f"      {plan.install_command}\n"
+        f"    expected: Helm release {plan.release_name} is deployed.\n"
+        "    on_failure: STOP; inspect Helm output and generated values file.\n"
+        "    mutates_target: true\n"
+        "    requires_human_approval: true"
+    )
+
+
+def _raw_commands_yaml(
+    reconstruction: ReconstructionPlan,
+    include: set[str] | None = None,
+    exclude: set[str] | None = None,
+) -> str:
+    plans = _filtered_raw_plans(reconstruction, include, exclude)
+    if not plans:
+        return "  []"
+    return "\n".join(_raw_command_yaml(plan, index) for index, plan in enumerate(plans, 1))
+
+
+def _raw_command_yaml(plan: RawManifestPlan, index: int) -> str:
+    return (
+        f"  - step_id: raw-{index}-{plan.kind.lower()}-{plan.name}\n"
+        f"    title: Apply {plan.kind} {plan.name}\n"
+        "    type: kubernetes\n"
+        "    depends_on: []\n"
+        f"    evidence_refs: [{plan.evidence_ref}]\n"
+        "    qdrant_refs: []\n"
+        "    inference:\n"
+        "      label: observed_or_inferred\n"
+        "      confidence: medium\n"
+        "      rationale: Manifest was normalized from available namespace evidence.\n"
+        "    command: |\n"
+        f"      {plan.dry_run_command}\n"
+        f"      {plan.apply_command}\n"
+        f"    expected: {plan.kind} {plan.name} exists in {plan.namespace}.\n"
+        "    on_failure: STOP; fix generated manifest and repeat dry-run.\n"
+        "    mutates_target: true\n"
+        "    requires_human_approval: true"
+    )
+
+
+def _raw_rollback_yaml(
+    reconstruction: ReconstructionPlan,
+    include: set[str] | None = None,
+    exclude: set[str] | None = None,
+) -> str:
+    plans = _filtered_raw_plans(reconstruction, include, exclude)
+    if not plans:
+        return "  - No rollback required."
+    return "\n".join(f"  - {plan.rollback_command}" for plan in reversed(plans))
+
+
+def _helm_rollback_yaml(reconstruction: ReconstructionPlan) -> str:
+    if not reconstruction.helm_releases:
+        return "  - No rollback required."
+    return "\n".join(
+        f"  - {plan.rollback_command}" for plan in reversed(reconstruction.helm_releases)
+    )
+
+
+def _validation_commands_yaml(reconstruction: ReconstructionPlan) -> str:
+    commands = [
+        *reconstruction.validation_commands,
+        *[plan.validation_command for plan in reconstruction.helm_releases],
+        *[plan.validation_command for plan in reconstruction.raw_manifests],
+    ]
+    if not commands:
+        return "  []"
+    return "\n".join(
+        "  - step_id: validate-{index}\n"
+        "    title: Validation command {index}\n"
+        "    type: validation\n"
+        "    depends_on: []\n"
+        "    evidence_refs: []\n"
+        "    qdrant_refs: []\n"
+        "    inference:\n"
+        "      label: observed_or_inferred\n"
+        "      confidence: medium\n"
+        "      rationale: Validation confirms generated platform resources.\n"
+        "    command: |\n"
+        "      {command}\n"
+        "    expected: Command succeeds and expected resources are visible.\n"
+        "    on_failure: STOP and inspect target namespace.\n"
+        "    mutates_target: false\n"
+        "    requires_human_approval: false".format(index=index, command=command)
+        for index, command in enumerate(commands, 1)
+    )
+
+
+def _helm_unknowns_yaml(reconstruction: ReconstructionPlan) -> str:
+    unknowns = [
+        f"  - {plan.release_name}: chart reference must be confirmed before install."
+        for plan in reconstruction.helm_releases
+        if plan.chart_ref.startswith("<")
+    ]
+    return "\n".join(unknowns) if unknowns else "  []"
+
+
+def _filtered_raw_plans(
+    reconstruction: ReconstructionPlan,
+    include: set[str] | None,
+    exclude: set[str] | None,
+) -> list[RawManifestPlan]:
+    plans = reconstruction.raw_manifests
+    if include is not None:
+        plans = [plan for plan in plans if plan.kind in include]
+    if exclude is not None:
+        plans = [plan for plan in plans if plan.kind not in exclude]
+    return plans
+
+
+def _join_commands(commands: Any) -> str:
+    command_list = [command for command in commands if command]
+    return "\n".join(command_list) if command_list else "echo \"No commands generated\""
+
+
+def _warning_suffix(warnings: list[str]) -> str:
+    if not warnings:
+        return ""
+    return "\n\n**Warnings:** " + "; ".join(warnings)
+
+
+def _repair_suggestions_markdown(result: RepairSuggestionResult) -> str:
+    lines = [f"- authority_order: {result.authority_order}"]
+    if not result.enabled:
+        lines.append("- llm_repair_suggestions: disabled")
+        return "\n".join(lines)
+    lines.append(f"- llm_repair_suggestions_status: {result.status}")
+    if not result.suggestions:
+        lines.append("- llm_suggestions: none")
+        return "\n".join(lines)
+    for suggestion in result.suggestions:
+        lines.append(
+            f"- {suggestion.label} / confidence={suggestion.confidence:.2f}: "
+            f"{suggestion.target_type}:{suggestion.target_name} - {suggestion.suggestion}"
+        )
+    return "\n".join(lines)
+
+
+def _inferences_yaml(result: RepairSuggestionResult) -> str:
+    base = (
+        "  - label: observed_or_inferred\n"
+        "    confidence: medium\n"
+        "    rationale: Phase 6 writes normalized manifests and Helm values from available evidence; missing chart refs or specs require human completion.\n"
+        "    authority_order: Observed evidence > deterministic normalization > LLM suggestion > human fill-in"
+    )
+    if not result.enabled:
+        return base + "\n  - label: llm_repair_disabled\n    confidence: high\n    rationale: Optional LLM repair suggestions are disabled."
+    if not result.suggestions:
+        return (
+            base
+            + f"\n  - label: llm_repair_{result.status}\n"
+            "    confidence: high\n"
+            "    rationale: No executable YAML was generated by the LLM repair layer."
+        )
+    blocks = [base]
+    for suggestion in result.suggestions:
+        blocks.append(
+            "  - label: llm_suggestion_requires_human_review\n"
+            f"    target: {suggestion.target_type}:{suggestion.target_name}\n"
+            f"    confidence: {suggestion.confidence:.2f}\n"
+            f"    rationale: {suggestion.rationale}\n"
+            "    executable_yaml_allowed: false"
+        )
+    return "\n".join(blocks)
 
 
 def _helm_summary(inventory: NormalizedInventory | None) -> str:
@@ -491,7 +826,7 @@ def _resource_steps(
             "{{target_namespace}}\"\n"
             "```\n\n"
             f"**Expected output:** {kind} `{resource.name}` is represented in generated manifests "
-            "after Phase 5 classification and normalization.\n\n"
+            "after Phase 6 normalization.\n\n"
             f"**Evidence:** {inventory.source}:{inventory.snapshot_id}:{resource.entity_key or resource.name}"
         )
     return "\n\n---\n\n".join(blocks)
@@ -555,7 +890,7 @@ def _evidence_references(
     mcp_attempted = ", ".join(mcp_sources_attempted) if mcp_sources_attempted else "none"
     if not inventory:
         return (
-            "- artifact.json: Phase 5 local artifact manifest.\n"
+            "- artifact.json: Phase 6 local artifact manifest.\n"
             f"- Snapshot sources attempted: {snapshot_attempted}.\n"
             f"- MCP sources attempted: {mcp_attempted}."
         )
@@ -652,6 +987,36 @@ def _classification_manifest(classification: ClassificationSummary | None) -> di
     }
 
 
+def _reconstruction_manifest(reconstruction: ReconstructionPlan) -> dict[str, Any]:
+    return {
+        "target_namespace": reconstruction.target_namespace,
+        "raw_manifest_count": reconstruction.raw_manifest_count,
+        "helm_release_count": reconstruction.helm_release_count,
+        "generated_manifests": [
+            {
+                "kind": plan.kind,
+                "name": plan.name,
+                "namespace": plan.namespace,
+                "file_path": plan.file_path,
+                "relative_path": plan.relative_path,
+                "warnings": plan.warnings,
+            }
+            for plan in reconstruction.raw_manifests
+        ],
+        "generated_values": [
+            {
+                "release_name": plan.release_name,
+                "chart_ref": plan.chart_ref,
+                "file_path": plan.values_file_path,
+                "relative_path": plan.values_relative_path,
+                "warnings": plan.warnings,
+            }
+            for plan in reconstruction.helm_releases
+        ],
+        "warnings": reconstruction.warnings,
+    }
+
+
 def _classified_resources_yaml(resources: list[ClassifiedResource]) -> str:
     return "\n".join(
         "  - kind: {kind}\n"
@@ -711,7 +1076,7 @@ def _write_placeholder_pdf(path: Path, markdown_content: str) -> None:
         for line in markdown_content.splitlines()
         if line.startswith("#") and line.strip("# ").strip()
     ]
-    lines = ["BOS Genesis MoP Creation Agent", "Phase 5 PDF Placeholder", *headings[:30]]
+    lines = ["BOS Genesis MoP Creation Agent", "Phase 6 PDF Placeholder", *headings[:30]]
     content_stream = _pdf_text_stream(lines)
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",

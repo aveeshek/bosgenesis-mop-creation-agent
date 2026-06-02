@@ -9,7 +9,7 @@
 
 The agent is not an executor. It creates a safe, line-by-line MoP PDF from the approved sample-derived template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured external LLM, initially GPT-4.1 mini, are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
+The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured LLM profile are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
 
 ## 1. Core Algorithm
 
@@ -92,6 +92,7 @@ function generate_mop(request):
             memory_context
         )
 
+    reconstruction_plan = empty
     normalized_manifests = []
     excluded = []
     warnings = []
@@ -99,14 +100,31 @@ function generate_mop(request):
     for each raw resource in classified.raw_k8s:
         if safe_to_recreate(resource):
             normalized = normalize(resource, target_namespace)
+            remove runtime metadata, status, cluster assigned service/PVC fields
+            write generated/<kind>-<name>.yaml
             normalized_manifests.append(normalized)
         else:
             excluded.append(resource)
 
-    helm_steps = build_helm_steps(classified.helm_releases, target_namespace)
+    for each helm release:
+        extract values evidence
+        redact secret-like keys
+        write values/values-<release>.yaml
+
+    helm_steps = build_helm_steps(inventory.helm_releases, target_namespace)
     k8s_steps = build_k8s_apply_steps(normalized_manifests, target_namespace)
     validation_steps = build_validation_steps(inventory, target_namespace)
     rollback_steps = build_rollback_steps(inventory, target_namespace)
+    reconstruction_plan = write platform-only artifact bundle
+
+    if llm.repair_suggestions_enabled and reconstruction_plan.has_gaps:
+        llm_suggestions = request_suggestion_only_repairs(
+            redacted_issue_context,
+            minimum_confidence,
+            authority_order="Observed evidence > deterministic normalization > LLM suggestion > human fill-in"
+        )
+        keep suggestions as human-review guidance only
+        do not mutate executable YAML from LLM output
 
     if request.mode == "application" and request.include_application_schema:
         schema_metadata = collect_application_schema_metadata(request)

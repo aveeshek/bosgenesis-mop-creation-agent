@@ -36,10 +36,38 @@ class EndpointSettings(BaseModel):
     timeout_seconds: float = 30
 
 
+class K8sInspectorSettings(EndpointSettings):
+    detail_enrichment_kinds: list[str] = Field(
+        default_factory=lambda: [
+            "ConfigMap",
+            "Service",
+            "Deployment",
+            "StatefulSet",
+            "DaemonSet",
+            "Job",
+            "CronJob",
+            "PersistentVolumeClaim",
+            "Ingress",
+        ]
+    )
+
+
 class McpSettings(BaseModel):
-    k8s_inspector: EndpointSettings = Field(default_factory=EndpointSettings)
+    k8s_inspector: K8sInspectorSettings = Field(default_factory=K8sInspectorSettings)
     helm_manager: EndpointSettings = Field(default_factory=EndpointSettings)
     data_ingestion_agent: EndpointSettings = Field(default_factory=EndpointSettings)
+
+
+class ArtifactPreviewSettings(BaseModel):
+    enabled: bool = True
+    max_bytes: int = 262144
+    allowed_extensions: list[str] = Field(
+        default_factory=lambda: [".json", ".md", ".yaml", ".yml"]
+    )
+
+
+class FeatureSettings(BaseModel):
+    artifact_preview: ArtifactPreviewSettings = Field(default_factory=ArtifactPreviewSettings)
 
 
 class QdrantRetrievalSettings(BaseModel):
@@ -82,10 +110,84 @@ class ObservabilitySettings(BaseModel):
     otlp_endpoint: str | None = None
 
 
+class LlmModelProfile(BaseModel):
+    provider: str = "azure_openai"
+    model: str | None = None
+    azure_endpoint: str | None = None
+    azure_deployment: str | None = None
+    azure_api_version: str | None = None
+    base_url: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = None
+    enabled: bool = True
+
+
 class LlmSettings(BaseModel):
     standalone_enabled: bool = True
     framework: str = "langgraph-langchain"
-    default_model: str = "gpt-4.1-mini"
+    default_model: str = "gemma4:26b"
+    repair_suggestions_enabled: bool = False
+    provider: str = "ollama"
+    azure_endpoint: str | None = None
+    azure_deployment: str | None = None
+    azure_api_version: str = "2024-12-01-preview"
+    temperature: float = 0.2
+    max_tokens: int = 800
+    minimum_confidence: float = 0.85
+    model_profiles: dict[str, LlmModelProfile] = Field(
+        default_factory=lambda: {
+            "gemma4:26b": LlmModelProfile(
+                provider="ollama",
+                model="gemma4:26b",
+                base_url="http://ollama.bosgenesis.svc.cluster.local:11434",
+                max_tokens=2048,
+            ),
+            "gpt-4.1-mini": LlmModelProfile(
+                provider="azure_openai",
+                azure_deployment="bos-trainium-sigma-gpt-4.1-mini",
+                azure_api_version="2024-12-01-preview",
+            ),
+            "gpt-5": LlmModelProfile(
+                provider="azure_openai",
+                azure_deployment="gpt-5",
+                azure_api_version="2024-12-01-preview",
+            ),
+            "gemma4": LlmModelProfile(
+                provider="ollama",
+                model="gemma4:26b",
+                base_url="http://ollama.bosgenesis.svc.cluster.local:11434",
+                max_tokens=2048,
+            ),
+            "llama70b": LlmModelProfile(
+                provider="ollama",
+                model="llama3.3:70b",
+                base_url="http://ollama-llama70b.bosgenesis.svc.cluster.local:11434",
+            ),
+        }
+    )
+
+    def active_profile(self) -> LlmModelProfile:
+        profile = self.model_profiles.get(self.default_model)
+        if profile is None:
+            return LlmModelProfile(
+                provider=self.provider,
+                model=self.default_model,
+                azure_endpoint=self.azure_endpoint,
+                azure_deployment=self.azure_deployment,
+                azure_api_version=self.azure_api_version,
+                temperature=self.temperature,
+                max_tokens=self.max_tokens,
+            )
+        return profile.model_copy(
+            update={
+                "azure_endpoint": profile.azure_endpoint or self.azure_endpoint,
+                "azure_api_version": profile.azure_api_version or self.azure_api_version,
+                "temperature": profile.temperature
+                if profile.temperature is not None
+                else self.temperature,
+                "max_tokens": profile.max_tokens if profile.max_tokens is not None else self.max_tokens,
+            }
+        )
 
 
 class Settings(BaseModel):
@@ -94,6 +196,7 @@ class Settings(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    features: FeatureSettings = Field(default_factory=FeatureSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     llm: LlmSettings = Field(default_factory=LlmSettings)
@@ -149,6 +252,18 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "CLICKHOUSE_USER": ("inventory", "clickhouse", "user"),
         "CLICKHOUSE_PASSWORD": ("inventory", "clickhouse", "password"),
         "CLICKHOUSE_DATABASE": ("inventory", "clickhouse", "database"),
+        "LLM_REPAIR_SUGGESTIONS_ENABLED": ("llm", "repair_suggestions_enabled"),
+        "LLM_DEFAULT_MODEL": ("llm", "default_model"),
+        "LLM_PROVIDER": ("llm", "provider"),
+        "AZURE_OPENAI_ENDPOINT": ("llm", "azure_endpoint"),
+        "OPENAI_DEPLOYMENT": ("llm", "azure_deployment"),
+        "OPENAI_API_VERSION": ("llm", "azure_api_version"),
+        "OLLAMA_BASE_URL": ("llm", "model_profiles", "gemma4:26b", "base_url"),
+        "OLLAMA_MODEL": ("llm", "model_profiles", "gemma4:26b", "model"),
+        "OLLAMA_GEMMA4_BASE_URL": ("llm", "model_profiles", "gemma4", "base_url"),
+        "OLLAMA_GEMMA4_MODEL": ("llm", "model_profiles", "gemma4", "model"),
+        "OLLAMA_LLAMA70B_BASE_URL": ("llm", "model_profiles", "llama70b", "base_url"),
+        "OLLAMA_LLAMA70B_MODEL": ("llm", "model_profiles", "llama70b", "model"),
     }
     for env_name, path in env_map.items():
         env_value = os.getenv(env_name)

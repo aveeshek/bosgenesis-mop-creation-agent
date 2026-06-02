@@ -49,6 +49,10 @@ mop_creation_effective_config
 
 ## Response contract
 
+`POST /mop-creation/generate` must start a background run and return HTTP 202
+with `status=accepted`. Callers must poll `GET /mop-creation/{mop_id}` until
+the status becomes `generated` or `failed`.
+
 Responses must include:
 
 - `mop_id`;
@@ -72,6 +76,7 @@ Responses must include:
 
 - REST and MCP must call the same orchestration contract.
 - REST is the standalone trigger path.
+- Generation is asynchronous; POST starts a run and GET retrieves current run state.
 - MCP is the Codex iterative refinement path.
 - Health/config responses must redact secrets.
 - API code must never call Kubernetes, Helm, databases, caches, or streams directly for evidence; it delegates to orchestration.

@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -27,6 +28,19 @@ def _settings(tmp_path: Path) -> Settings:
     return Settings(agent=AgentSettings(local_storage_path=str(tmp_path)))
 
 
+def _wait_for_generated(client: TestClient, mop_id: str) -> dict:
+    deadline = time.monotonic() + 10
+    payload = {}
+    while time.monotonic() < deadline:
+        response = client.get(f"/mop-creation/{mop_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] != "accepted":
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"MoP generation did not complete in time: {payload}")
+
+
 def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
 
@@ -40,8 +54,14 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
         },
     )
 
-    assert response.status_code == 200
-    payload = response.json()
+    assert response.status_code == 202
+    accepted_payload = response.json()
+    assert accepted_payload["status"] == "accepted"
+    assert accepted_payload["correlation_id"] == "test-correlation-id"
+    assert accepted_payload["run_id"]
+    assert accepted_payload["mop_id"]
+
+    payload = _wait_for_generated(client, accepted_payload["mop_id"])
     assert payload["status"] == "generated"
     assert payload["correlation_id"] == "test-correlation-id"
     assert payload["run_id"]
@@ -112,6 +132,25 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     classification_response = client.get(f"/mop-creation/{mop_id}/classification")
     assert classification_response.status_code == 404
 
+    artifacts_response = client.get(f"/mop-creation/{mop_id}/artifacts")
+    assert artifacts_response.status_code == 200
+    artifact_index = artifacts_response.json()
+    assert artifact_index["mop_id"] == mop_id
+    assert any(item["path"] == "artifact.json" for item in artifact_index["files"])
+
+    preview_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/preview",
+        params={"path": "artifact.json"},
+    )
+    assert preview_response.status_code == 200
+    assert preview_response.json()["content"].startswith("{")
+
+    traversal_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/preview",
+        params={"path": "../settings.yaml"},
+    )
+    assert traversal_response.status_code == 403
+
 
 def test_latest_returns_404_before_generation() -> None:
     client = TestClient(create_app(Settings()))
@@ -134,6 +173,8 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
         "mop_creation_get",
         "mop_creation_latest",
         "mop_creation_classification",
+        "mop_creation_artifacts",
+        "mop_creation_artifact_preview",
         "mop_creation_effective_config",
     }.issubset(tool_names)
 
@@ -144,11 +185,13 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
 
     assert generate_response.status_code == 200
     result = generate_response.json()["result"]
-    assert result["status"] == "generated"
+    assert result["status"] == "accepted"
     assert result["run_id"]
     assert result["correlation_id"]
     assert result["target_namespace"] == "bosgenesis-copy-dev"
-    assert Path(result["artifacts"]["human_mop_pdf_path"]).is_file()
+    generated = _wait_for_generated(client, result["mop_id"])
+    assert generated["status"] == "generated"
+    assert Path(generated["artifacts"]["human_mop_pdf_path"]).is_file()
 
 
 def test_mcp_json_rpc_tools_call() -> None:

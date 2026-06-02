@@ -130,9 +130,32 @@ Generated manifests must:
 - rewrite `metadata.namespace` to the target namespace;
 - remove runtime metadata;
 - exclude blocked resource kinds;
-- contain no secret values or production data.
+- contain no secret values or production data;
+- redact secret-like scalar values in generated raw manifests, including
+  environment variables whose names contain password, token, secret, credential,
+  key, or similar sensitive markers.
+
+Phase 6 platform-only generation must also write redacted Helm values files under:
+
+```text
+/data/mops/<mop-id>/values/values-<release>.yaml
+```
+
+The values files must preserve non-sensitive overrides and replace secret-like
+values with placeholders.
 
 ## 7. API Response Contract
+
+Generation is asynchronous:
+
+```text
+POST /mop-creation/generate -> HTTP 202, status=accepted
+GET  /mop-creation/{mop_id} -> status=accepted | generated | failed
+```
+
+When `status=accepted`, identifiers and trace placeholders are available, but
+artifact file paths may be empty or point to planned locations. Callers must poll
+until `status=generated` before reading artifacts.
 
 The generation response must include:
 
@@ -173,7 +196,74 @@ GET /mop-creation/{mop_id}/classification
 
 The summary must include classification counts, warning summaries, and resource-level category records when requested through the dedicated endpoint. Pod runtime artifacts should be summarized rather than emitted as one warning per Pod.
 
-## 8. MCP Output Contract
+## 8. Artifact Preview Contract
+
+The agent may expose controlled artifact preview endpoints for deploy testing and
+Codex review:
+
+```text
+GET /mop-creation/{mop_id}/artifacts
+GET /mop-creation/{mop_id}/artifacts/preview?path=<relative-artifact-path>
+```
+
+Preview rules:
+
+- only files under the selected `mop_id` artifact directory are readable;
+- path traversal and absolute paths are denied;
+- only configured extensions are previewable;
+- response size is capped by configuration;
+- preview can be disabled by configuration;
+- preview must not bypass secret exclusion or redaction controls.
+
+## 9. Phase 6.2 LLM Suggestion Contract
+
+When enabled, the LLM repair layer may add suggestion records to artifact metadata
+and inference sections. It must not modify executable YAML or command text.
+
+Every LLM suggestion must include:
+
+```text
+target_type
+target_name
+issue
+suggestion
+confidence
+rationale
+evidence_refs
+label=llm_suggestion_requires_human_review
+executable_yaml_allowed=false
+```
+
+The agent must drop LLM suggestions below the configured confidence threshold.
+
+The LLM response must validate against a strict Pydantic envelope:
+
+```text
+suggestions[]
+```
+
+where each suggestion uses the fields above and `confidence` is a number from
+0.0 through 1.0. Prose-only responses, thinking text, malformed JSON, extra
+top-level fields, invalid confidence values, or missing required fields must not
+be accepted silently.
+
+Artifact metadata must include parser diagnostics:
+
+```text
+candidate_count
+response_chars
+response_source
+parse_status
+accepted_count
+rejected_low_confidence_count
+rejected_invalid_count
+minimum_confidence
+```
+
+These diagnostics must distinguish valid empty responses from invalid structured
+output and from low-confidence suggestions filtered by policy.
+
+## 10. MCP Output Contract
 
 MCP tool responses must be agent-readable and include:
 
@@ -184,7 +274,7 @@ MCP tool responses must be agent-readable and include:
 - trace identifiers;
 - no secret values.
 
-## 9. Evidence Contract
+## 11. Evidence Contract
 
 Every generated step must be grounded by at least one of:
 

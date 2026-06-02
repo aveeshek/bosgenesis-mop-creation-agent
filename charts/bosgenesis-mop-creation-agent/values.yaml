@@ -68,6 +68,16 @@ config:
       enabled: true
       endpoint: http://bosgenesis-k8s-inspector-mcp.bosgenesis.svc.cluster.local:8080/mcp
       host_header: k8s-inspector.bosgenesis.local
+      detail_enrichment_kinds:
+        - ConfigMap
+        - Service
+        - Deployment
+        - StatefulSet
+        - DaemonSet
+        - Job
+        - CronJob
+        - PersistentVolumeClaim
+        - Ingress
     helm_manager:
       enabled: true
       endpoint: http://bosgenesis-helm-manager-mcp.bosgenesis.svc.cluster.local:8080/mcp
@@ -85,6 +95,15 @@ config:
       top_k: 5
       min_score: 0.72
       ingestion_owned_by: separate-agent
+  features:
+    artifact_preview:
+      enabled: true
+      max_bytes: 262144
+      allowed_extensions:
+        - .json
+        - .md
+        - .yaml
+        - .yml
   inventory:
     postgres:
       enabled: true
@@ -102,7 +121,38 @@ config:
   llm:
     standalone_enabled: true
     framework: langgraph-langchain
-    default_model: gpt-4.1-mini
+    default_model: gemma4:26b
+    repair_suggestions_enabled: true
+    provider: ollama
+    azure_endpoint: ""
+    azure_deployment: ""
+    azure_api_version: 2024-12-01-preview
+    temperature: 0.2
+    max_tokens: 800
+    minimum_confidence: 0.85
+    model_profiles:
+      gemma4:26b:
+        provider: ollama
+        model: gemma4:26b
+        base_url: http://ollama.bosgenesis.svc.cluster.local:11434
+        max_tokens: 2048
+      gpt-4.1-mini:
+        provider: azure_openai
+        azure_deployment: bos-trainium-sigma-gpt-4.1-mini
+        azure_api_version: 2024-12-01-preview
+      gpt-5:
+        provider: azure_openai
+        azure_deployment: gpt-5
+        azure_api_version: 2024-12-01-preview
+      gemma4:
+        provider: ollama
+        model: gemma4:26b
+        base_url: http://ollama.bosgenesis.svc.cluster.local:11434
+        max_tokens: 2048
+      llama70b:
+        provider: ollama
+        model: llama3.3:70b
+        base_url: http://ollama-llama70b.bosgenesis.svc.cluster.local:11434
 
 persistence:
   enabled: true

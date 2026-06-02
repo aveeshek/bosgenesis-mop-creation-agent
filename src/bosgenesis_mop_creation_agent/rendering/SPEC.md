@@ -6,7 +6,7 @@
 
 ## Current modules
 
-- `artifact_writer.py`: Local artifact writer that renders snapshot-backed and MCP-enriched human MoP markdown, PDF placeholder, installation notes markdown, and `artifact.json` metadata from the approved artifact templates.
+- `artifact_writer.py`: Local artifact writer that renders snapshot-backed, MCP-enriched, and reconstruction-backed human MoP markdown, PDF placeholder, installation notes markdown, and `artifact.json` metadata from the approved artifact templates.
 
 ## Future modules
 
@@ -14,8 +14,6 @@
 - `mop_renderer.py`
 - `pdf_renderer.py`
 - `installation_notes_renderer.py`
-- `command_builder.py`
-- `manifest_normalizer.py`
 - `markdown_writer.py`
 
 ## Human MoP PDF output
@@ -47,7 +45,7 @@ Rendered commands must:
 
 ## Manifest and values normalization
 
-Rendered snippets must remove runtime metadata, rewrite namespace to target namespace, and redact secret-like values.
+Rendered snippets are produced by `reconstruction/`. The rendering layer must reference the generated raw manifests and redacted Helm values files, and must not reintroduce blocked resources or secret values into command sections.
 
 ## Safety
 

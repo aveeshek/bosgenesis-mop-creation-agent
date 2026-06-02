@@ -45,6 +45,29 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
             },
         ),
         McpToolDefinition(
+            name="mop_creation_artifacts",
+            description="List generated artifacts for a MoP run.",
+            input_schema={
+                "type": "object",
+                "properties": {"mop_id": {"type": "string"}},
+                "required": ["mop_id"],
+                "additionalProperties": False,
+            },
+        ),
+        McpToolDefinition(
+            name="mop_creation_artifact_preview",
+            description="Preview one safe generated artifact file for a MoP run.",
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "mop_id": {"type": "string"},
+                    "path": {"type": "string"},
+                },
+                "required": ["mop_id", "path"],
+                "additionalProperties": False,
+            },
+        ),
+        McpToolDefinition(
             name="mop_creation_effective_config",
             description="Return redacted effective configuration.",
             input_schema={"type": "object", "properties": {}, "additionalProperties": False},
@@ -68,7 +91,7 @@ def call_mcp_tool(
         }
     if tool_name == "mop_creation_generate":
         request = MoPGenerationRequest.model_validate(arguments)
-        return orchestrator.generate(request).model_dump(mode="json")
+        return orchestrator.submit_generation(request).model_dump(mode="json")
     if tool_name == "mop_creation_get":
         response = orchestrator.get(str(arguments["mop_id"]))
         if response is None:
@@ -84,6 +107,16 @@ def call_mcp_tool(
         if summary is None:
             return {"status": "not_found", "mop_id": arguments["mop_id"]}
         return summary
+    if tool_name == "mop_creation_artifacts":
+        index = orchestrator.artifact_index(str(arguments["mop_id"]))
+        if index is None:
+            return {"status": "not_found", "mop_id": arguments["mop_id"]}
+        return index
+    if tool_name == "mop_creation_artifact_preview":
+        preview = orchestrator.artifact_preview(str(arguments["mop_id"]), str(arguments["path"]))
+        if preview is None:
+            return {"status": "not_found", "mop_id": arguments["mop_id"]}
+        return preview
     if tool_name == "mop_creation_effective_config":
         return settings.redacted_dict()
     raise KeyError(tool_name)

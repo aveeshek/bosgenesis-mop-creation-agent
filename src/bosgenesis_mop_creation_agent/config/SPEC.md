@@ -28,10 +28,25 @@ agent.source_namespace = bosgenesis
 agent.public_repositories_only = true
 agent.default_generation_mode = platform-only
 local_storage.enabled = true
-llm.default_model = gpt-4.1-mini
+llm.default_model = gemma4:26b
+llm.repair_suggestions_enabled = false
+llm.provider = ollama
+llm.azure_endpoint = optional Azure OpenAI endpoint
+llm.azure_deployment = optional Azure OpenAI deployment name
+llm.azure_api_version = 2024-12-01-preview
+llm.minimum_confidence = 0.85
+llm.model_profiles.gemma4:26b.provider = ollama
+llm.model_profiles.gpt-4.1-mini.provider = azure_openai
+llm.model_profiles.gpt-5.provider = azure_openai
+llm.model_profiles.gemma4.provider = ollama
+llm.model_profiles.llama70b.provider = ollama
 memory.langmem.enabled = true
 memory.letta.enabled = false
 ```
+
+`llm.default_model` selects the active profile. Switching among supported models
+should require only a config value change, for example `gemma4:26b`, `gpt-4.1-mini`,
+`gpt-5`, `gemma4`, or `llama70b`.
 
 ## Safe output
 
