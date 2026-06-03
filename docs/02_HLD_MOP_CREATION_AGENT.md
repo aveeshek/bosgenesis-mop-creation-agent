@@ -69,7 +69,7 @@ flowchart LR
 | Resource Classifier | Split resources into Helm-managed, raw Kubernetes, excluded, and warning-only categories. |
 | Manifest Normalizer | Remove runtime metadata, redact sensitive fields, and rewrite namespace references for the target namespace. |
 | Qdrant Retrieval Layer | Read existing vectorized MoP/installation notes for discovered components when enabled; return cited prior references or skip when no match exists. |
-| Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, and application-mode metadata guidance. |
+| Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then optional bounded LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, required human inputs, and application-mode metadata guidance. LLM output is advisory only and cannot mutate executable artifacts. |
 | Human MoP and Installation Notes Renderer | Generate sample-format human MoP content, a valid PDF placeholder until the production renderer phase, Markdown installation notes for agents, and standalone machine execution YAML. |
 | Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Generation-time Qdrant access remains read-only; optional Qdrant ingestion is a separate gated admin flow. |
 | Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
@@ -100,6 +100,10 @@ sequenceDiagram
     Q-->>A: matching references or no-match
     A->>A: normalize manifests and rewrite target namespace
     A->>A: reason over install order, unknowns, public repo/chart evidence, and cited prior references
+    opt deterministic gaps remain and llm.reasoning_enabled
+        A->>A: send redacted evidence pack to LangGraph/LangChain model gateway
+        A->>A: validate structured advisory findings and confidence gate output
+    end
     A->>A: render sample-format human MoP, PDF placeholder, Markdown notes, and machine plan YAML
     A->>A: write local file
     A->>M: save MoP metadata/document if enabled

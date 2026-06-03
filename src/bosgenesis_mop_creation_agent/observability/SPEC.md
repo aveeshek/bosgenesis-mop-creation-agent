@@ -48,3 +48,9 @@ Every emitted event must carry:
 ## Safety
 
 Logs, traces, metrics, and audit records must be redacted and must not contain secret values or production data.
+
+LLM reasoning telemetry may include candidate counts, parser status, accepted
+finding counts, low-confidence rejection counts, model profile name,
+correlation ID, and whether LangGraph was used. It must not persist prompt text,
+model response text, Qdrant excerpts, manifests, Secret data, credentials, or
+production payloads.

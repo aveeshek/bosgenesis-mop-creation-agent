@@ -84,13 +84,28 @@ function generate_mop(request):
     prior_references = lookup_qdrant_references(classified, inventory)
     reasoning_plan = build_deterministic_reasoning_plan(classified)
 
-    if reasoning_plan.has_ambiguity and standalone_llm_enabled:
-        reasoning_plan = refine_with_langgraph_llm(
-            reasoning_plan,
-            redacted_evidence,
+    if deterministic reconstruction has no gaps:
+        bounded_llm_reasoning = deterministic_sufficient
+    else if llm.reasoning_enabled:
+        bounded_llm_reasoning = request_bounded_reasoning(
+            redacted_evidence_pack,
             prior_references,
-            memory_context
+            prompt_contracts=[
+                ambiguity_detection,
+                helm_chart_public_repo_suggestion,
+                install_order_sanity,
+                missing_manifest_spec_explanation,
+                required_human_inputs,
+                confidence_labeling
+            ],
+            output_schema=ReasoningEnvelope,
+            minimum_confidence=config.llm.minimum_confidence
         )
+        validate schema and confidence
+        keep findings as advisory guidance only
+        do not mutate executable manifests, Helm commands, or values from LLM output
+    else:
+        bounded_llm_reasoning = disabled
 
     reconstruction_plan = empty
     normalized_manifests = []

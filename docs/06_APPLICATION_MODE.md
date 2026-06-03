@@ -83,8 +83,10 @@ if mode == "application":
         create recreation steps and validation checks
         add warnings for unknowns or insufficient permissions
     if deterministic metadata is incomplete and LLM reasoning is enabled:
-        infer likely schema/topology steps from redacted evidence
-        label inferred steps with confidence and required human confirmation
+        request bounded advisory suggestions from redacted evidence and prior Qdrant references
+        validate structured output and confidence threshold
+        label accepted suggestions as llm_suggestion_requires_human_review
+        never generate executable DDL, broker commands, or cache commands as final truth
 ```
 
 Application metadata collection must happen after namespace/platform classification so the agent can associate schemas and topics with Kubernetes workloads where evidence supports that relationship.

@@ -131,6 +131,7 @@ class LlmSettings(BaseModel):
     standalone_enabled: bool = True
     framework: str = "langgraph-langchain"
     default_model: str = "gemma4:26b"
+    reasoning_enabled: bool = False
     repair_suggestions_enabled: bool = False
     provider: str = "ollama"
     azure_endpoint: str | None = None
@@ -258,6 +259,7 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "CLICKHOUSE_PASSWORD": ("inventory", "clickhouse", "password"),
         "CLICKHOUSE_DATABASE": ("inventory", "clickhouse", "database"),
         "LLM_REPAIR_SUGGESTIONS_ENABLED": ("llm", "repair_suggestions_enabled"),
+        "LLM_REASONING_ENABLED": ("llm", "reasoning_enabled"),
         "LLM_DEFAULT_MODEL": ("llm", "default_model"),
         "LLM_PROVIDER": ("llm", "provider"),
         "AZURE_OPENAI_ENDPOINT": ("llm", "azure_endpoint"),

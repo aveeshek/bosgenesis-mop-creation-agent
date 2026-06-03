@@ -14,7 +14,8 @@ from bosgenesis_mop_creation_agent.classification.models import (
     ClassifiedResource,
 )
 from bosgenesis_mop_creation_agent.config.settings import LlmSettings
-from bosgenesis_mop_creation_agent.llm.models import RepairSuggestionResult
+from bosgenesis_mop_creation_agent.llm.bounded_reasoning import build_bounded_reasoning
+from bosgenesis_mop_creation_agent.llm.models import BoundedReasoningResult, RepairSuggestionResult
 from bosgenesis_mop_creation_agent.llm.repair_suggester import build_repair_suggestions
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.reconstruction.models import (
@@ -107,18 +108,26 @@ class LocalArtifactWriter:
             generated_dir=generated_dir,
             values_dir=values_dir,
         )
+        reference_result = qdrant_references or ReferenceLookupResult()
+        bounded_reasoning = build_bounded_reasoning(
+            settings=self._llm_settings,
+            reconstruction=reconstruction,
+            classification=classification,
+            correlation_id=correlation_id,
+            prior_references=reference_result,
+        )
         repair_suggestions = build_repair_suggestions(
             settings=self._llm_settings,
             reconstruction=reconstruction,
             classification=classification,
             correlation_id=correlation_id,
-            prior_references=qdrant_references,
+            prior_references=reference_result,
         )
-        reference_result = qdrant_references or ReferenceLookupResult()
         all_warnings = [
             *warnings,
             *reconstruction.warnings,
             *reference_result.warnings,
+            *bounded_reasoning.warnings,
             *repair_suggestions.warnings,
         ]
 
@@ -133,6 +142,7 @@ class LocalArtifactWriter:
             inventory=inventory,
             classification=classification,
             reconstruction=reconstruction,
+            bounded_reasoning=bounded_reasoning,
             repair_suggestions=repair_suggestions,
             qdrant_references=reference_result,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
@@ -185,6 +195,7 @@ class LocalArtifactWriter:
             "classification": _classification_manifest(classification),
             "reconstruction": _reconstruction_manifest(reconstruction),
             "qdrant_prior_references": reference_result.model_dump(mode="json"),
+            "bounded_llm_reasoning": bounded_reasoning.model_dump(mode="json"),
             "machine_execution_plan": _machine_execution_plan(
                 reconstruction=reconstruction,
                 classification=classification,
@@ -239,6 +250,7 @@ class LocalArtifactWriter:
         inventory: NormalizedInventory | None,
         classification: ClassificationSummary | None,
         reconstruction: ReconstructionPlan,
+        bounded_reasoning: BoundedReasoningResult,
         repair_suggestions: RepairSuggestionResult,
         qdrant_references: ReferenceLookupResult,
         snapshot_sources_attempted: list[str],
@@ -353,7 +365,7 @@ class LocalArtifactWriter:
             ),
             "qdrant_prior_references": _qdrant_references_markdown(qdrant_references),
             "inference_labels_and_rationale": (
-                _repair_suggestions_markdown(repair_suggestions)
+                _reasoning_and_repair_markdown(bounded_reasoning, repair_suggestions)
             ),
             "excluded_resources": _excluded_resources_markdown(classification),
             "generation_status": "generated",
@@ -438,11 +450,11 @@ class LocalArtifactWriter:
             "rollback_trigger_conditions_yaml": "  - Any approved install/apply command fails after mutation begins.",
             "namespace_cleanup_rollback_yaml": "  - Delete target namespace only with explicit approval.",
             "inferences_yaml": (
-                _inferences_yaml(repair_suggestions)
+                _inferences_yaml(bounded_reasoning, repair_suggestions)
             ),
             "unknowns_yaml": _unknowns_yaml(inventory),
             "confidence_summary_yaml": (
-                "  overall: medium_when_snapshot_found_low_when_missing"
+                _confidence_summary_yaml(bounded_reasoning, repair_suggestions)
             ),
             "machine_execution_plan_yaml": _machine_execution_plan_yaml(
                 reconstruction=reconstruction,
@@ -1230,6 +1242,42 @@ def _repair_suggestions_markdown(result: RepairSuggestionResult) -> str:
     return "\n".join(lines)
 
 
+def _bounded_reasoning_markdown(result: BoundedReasoningResult) -> str:
+    lines = [f"- bounded_reasoning_authority_order: {result.authority_order}"]
+    if not result.enabled:
+        lines.append("- bounded_llm_reasoning: disabled")
+        return "\n".join(lines)
+    lines.append(f"- bounded_llm_reasoning_status: {result.status}")
+    lines.append(f"- langgraph_used: {str(result.diagnostics.langgraph_used).lower()}")
+    lines.append("- llm_output_authoritative: false")
+    if result.status == "deterministic_sufficient":
+        lines.append("- deterministic_evidence: sufficient")
+    if not result.findings:
+        lines.append("- bounded_reasoning_findings: none")
+        return "\n".join(lines)
+    for finding in result.findings:
+        human_inputs = "; ".join(finding.required_human_inputs) or "human review required"
+        qdrant_refs = ", ".join(finding.qdrant_refs) or "none"
+        lines.append(
+            f"- {finding.label} / confidence={finding.confidence:.2f}: "
+            f"{finding.focus_area}:{finding.target} - {finding.recommendation} "
+            f"(qdrant_refs={qdrant_refs}; human_inputs={human_inputs})"
+        )
+    return "\n".join(lines)
+
+
+def _reasoning_and_repair_markdown(
+    reasoning: BoundedReasoningResult,
+    repair: RepairSuggestionResult,
+) -> str:
+    return "\n".join(
+        [
+            _bounded_reasoning_markdown(reasoning),
+            _repair_suggestions_markdown(repair),
+        ]
+    )
+
+
 def _qdrant_references_markdown(result: ReferenceLookupResult) -> str:
     if not result.enabled:
         return "- qdrant_lookup: disabled"
@@ -1282,24 +1330,61 @@ def _qdrant_references_yaml(result: ReferenceLookupResult) -> str:
     return "\n".join(blocks)
 
 
-def _inferences_yaml(result: RepairSuggestionResult) -> str:
+def _inferences_yaml(
+    reasoning: BoundedReasoningResult,
+    repair: RepairSuggestionResult,
+) -> str:
     base = (
         "  - label: observed_or_inferred\n"
         "    confidence: medium\n"
-        "    rationale: Phase 6 writes normalized manifests and Helm values from available evidence; missing chart refs or specs require human completion.\n"
-        "    authority_order: Observed evidence > deterministic normalization > LLM suggestion > human fill-in"
+        "    rationale: Deterministic reconstruction writes normalized manifests and Helm values from available evidence; missing chart refs or specs require human completion.\n"
+        "    authority_order: Observed evidence > deterministic reconstruction > Qdrant prior references > LLM suggestion > human approval"
     )
-    if not result.enabled:
-        return base + "\n  - label: llm_repair_disabled\n    confidence: high\n    rationale: Optional LLM repair suggestions are disabled."
-    if not result.suggestions:
-        return (
-            base
-            + f"\n  - label: llm_repair_{result.status}\n"
-            "    confidence: high\n"
-            "    rationale: No executable YAML was generated by the LLM repair layer."
-        )
     blocks = [base]
-    for suggestion in result.suggestions:
+    if not reasoning.enabled:
+        blocks.append(
+            "  - label: bounded_llm_reasoning_disabled\n"
+            "    confidence: high\n"
+            "    rationale: Optional bounded LLM reasoning is disabled.\n"
+            "    executable_yaml_allowed: false"
+        )
+    elif not reasoning.findings:
+        blocks.append(
+            f"  - label: bounded_llm_reasoning_{reasoning.status}\n"
+            "    confidence: high\n"
+            "    rationale: No executable YAML or Helm command was generated by the bounded reasoning layer.\n"
+            "    executable_yaml_allowed: false"
+        )
+    else:
+        for finding in reasoning.findings:
+            qdrant_refs = ", ".join(finding.qdrant_refs)
+            human_inputs = ", ".join(finding.required_human_inputs)
+            blocks.append(
+                "  - label: llm_suggestion_requires_human_review\n"
+                f"    focus_area: {finding.focus_area}\n"
+                f"    target: {finding.target}\n"
+                f"    confidence: {finding.confidence:.2f}\n"
+                f"    rationale: {finding.rationale}\n"
+                f"    qdrant_refs: [{qdrant_refs}]\n"
+                f"    required_human_inputs: [{human_inputs}]\n"
+                "    authoritative: false\n"
+                "    executable_yaml_allowed: false"
+            )
+    if not repair.enabled:
+        blocks.append(
+            "  - label: llm_repair_disabled\n"
+            "    confidence: high\n"
+            "    rationale: Optional LLM repair suggestions are disabled.\n"
+            "    executable_yaml_allowed: false"
+        )
+    elif not repair.suggestions:
+        blocks.append(
+            f"  - label: llm_repair_{repair.status}\n"
+            "    confidence: high\n"
+            "    rationale: No executable YAML was generated by the LLM repair layer.\n"
+            "    executable_yaml_allowed: false"
+        )
+    for suggestion in repair.suggestions:
         blocks.append(
             "  - label: llm_suggestion_requires_human_review\n"
             f"    target: {suggestion.target_type}:{suggestion.target_name}\n"
@@ -1308,6 +1393,20 @@ def _inferences_yaml(result: RepairSuggestionResult) -> str:
             "    executable_yaml_allowed: false"
         )
     return "\n".join(blocks)
+
+
+def _confidence_summary_yaml(
+    reasoning: BoundedReasoningResult,
+    repair: RepairSuggestionResult,
+) -> str:
+    return (
+        "  overall: medium_when_snapshot_found_low_when_missing\n"
+        f"  bounded_llm_reasoning_status: {reasoning.status}\n"
+        f"  bounded_llm_reasoning_accepted_findings: {len(reasoning.findings)}\n"
+        f"  llm_repair_status: {repair.status}\n"
+        f"  llm_repair_accepted_suggestions: {len(repair.suggestions)}\n"
+        "  llm_output_authoritative: false"
+    )
 
 
 def _helm_summary(inventory: NormalizedInventory | None) -> str:

@@ -15,6 +15,7 @@ The documentation set must preserve the original product context:
 - optional Qdrant insertion of generated MoP artifacts is a separate gated admin flow that requires explicit user confirmation, and generation remains read-only;
 - Codex integration is through an on-demand MCP server that supports generation, retrieval, configuration inspection, artifact preview, and artifact cleanup;
 - standalone mode is triggered through REST, uses LangGraph/LangChain with a configured LLM profile, and uses agentic memory through LangMem and backing stores;
+- Phase 10 LLM reasoning is optional, bounded, redacted, schema-validated, confidence-gated, and advisory only; it must never generate executable manifests/Helm commands as final truth or approve a MoP;
 - all actions, tool calls, and reasoning decisions must be traceable in Langfuse, SigNoz/OpenTelemetry, and structured logs;
 - future scope includes multi-namespace, cluster-admin add-only scope, custom repositories, Docker image reconstruction hints, and Letta-backed memory.
 

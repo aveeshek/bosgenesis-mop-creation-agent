@@ -44,6 +44,14 @@ LLM reasoning must:
 - label Qdrant-derived content as prior reference guidance;
 - be validated before artifact delivery.
 
+LLM reasoning must not generate executable manifests, mutate generated YAML,
+generate Helm commands as final truth, or approve the MoP. Accepted LLM findings
+are advisory only and must use `llm_suggestion_requires_human_review`.
+
+When deterministic evidence is sufficient, the reasoning layer may skip the LLM
+and record `deterministic_sufficient`. When the model is unavailable, generation
+continues with deterministic output and a warning.
+
 ## Memory usage
 
 Reasoning may retrieve and store non-secret summaries through LangMem-backed short-term, episodic, and knowledge memory.

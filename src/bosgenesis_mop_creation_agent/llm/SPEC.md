@@ -50,7 +50,7 @@ The LLM boundary must not receive:
 
 ## Failure behavior
 
-If standalone mode requires LLM reasoning and the model is unavailable, the run fails unless deterministic-only fallback is explicitly enabled.
+If optional LLM reasoning is enabled and the model is unavailable, generation must still complete with deterministic artifacts and a warning. Model failure must not block MoP creation unless a future explicit policy changes this behavior.
 
 ## Phase 6.2 repair/suggestion layer
 
@@ -105,3 +105,47 @@ For Ollama models, the parser may use response metadata or additional kwargs as
 a parse-only fallback when `.content` is empty. Raw fallback text must never be
 persisted in artifacts; only diagnostics such as response source, character
 count, parse status, and rejection counts may be stored.
+
+## Phase 10 bounded reasoning layer
+
+The Phase 10 bounded reasoning layer is optional and controlled by
+`llm.reasoning_enabled`. It uses LangGraph when available, with a direct
+LangChain-compatible model fallback when the LangGraph package is unavailable.
+
+It must follow this authority order:
+
+```text
+Observed evidence > deterministic reconstruction > Qdrant prior references > LLM suggestion > human approval
+```
+
+The layer may evaluate:
+
+- ambiguity detection;
+- Helm chart/public repository suggestions;
+- install-order sanity;
+- missing manifest/spec explanation;
+- required human inputs;
+- confidence and rationale labels.
+
+The layer must receive only a redacted bounded evidence pack containing summary
+counts, gap candidates, evidence references, and redacted Qdrant citations. It
+must not receive raw Secret values, production data, unredacted manifests, table
+rows, connection strings, or credentials.
+
+The response must validate against `ReasoningEnvelope`. Accepted findings must
+be written only as advisory artifact metadata and rendered guidance:
+
+- `label=llm_suggestion_requires_human_review`
+- `authoritative=false`
+- `executable_yaml_allowed=false`
+
+The bounded reasoning layer must not:
+
+- generate executable manifests as final truth;
+- generate Helm commands without deterministic validation;
+- mutate generated YAML;
+- approve the final MoP.
+
+When deterministic evidence has no candidate gaps, the layer may be skipped and
+must report `deterministic_sufficient`. Low-confidence findings are rejected and
+converted into diagnostics/human-review needs.

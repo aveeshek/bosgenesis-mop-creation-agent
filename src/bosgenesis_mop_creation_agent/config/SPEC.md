@@ -29,6 +29,7 @@ agent.public_repositories_only = true
 agent.default_generation_mode = platform-only
 local_storage.enabled = true
 llm.default_model = gemma4:26b
+llm.reasoning_enabled = false in package defaults, true in deploy configuration when Phase 10 is enabled
 llm.repair_suggestions_enabled = false
 llm.provider = ollama
 llm.azure_endpoint = optional Azure OpenAI endpoint

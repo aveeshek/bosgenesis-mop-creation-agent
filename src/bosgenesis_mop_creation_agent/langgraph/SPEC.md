@@ -12,6 +12,17 @@
 - Preserve deterministic-first behavior before LLM-assisted nodes.
 - Support interruption-safe, traceable execution.
 
+## Current bounded graph
+
+Phase 10 introduces a bounded one-node LangGraph flow for optional LLM reasoning
+when deterministic reconstruction has candidate gaps. The graph input is a
+redacted evidence pack plus prior Qdrant citations. The graph output is parsed
+through a strict Pydantic schema and stored as advisory findings only.
+
+If LangGraph is not installed or cannot be imported, the same prompt may be sent
+through the configured LangChain-compatible model gateway without failing the
+generation run.
+
 ## Future graph nodes
 
 - `prepare_evidence`

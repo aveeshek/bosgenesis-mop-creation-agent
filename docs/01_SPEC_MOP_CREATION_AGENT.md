@@ -35,6 +35,7 @@ The generated human MoP content must allow a human operator to recreate source n
 - Query Qdrant for existing vectorized MoP/installation-note references for discovered components when enabled.
 - Use matching Qdrant references as non-authoritative prior guidance with citations, confidence, and validation against current evidence.
 - Optionally ingest completed, redacted MoP artifacts into Qdrant through an explicit admin API. This ingestion path is separate from generation and requires explicit user confirmation.
+- Use optional Phase 10 bounded LLM reasoning only when deterministic reconstruction has gaps or ambiguity. LLM output is schema-validated, confidence-gated, advisory only, and labeled `llm_suggestion_requires_human_review`.
 - Generate human MoP content in local storage using the approved sample-derived template, plus a valid PDF placeholder until the production PDF renderer phase is implemented.
 - Generate LLM/agent-readable Markdown installation notes in local storage.
 - Generate a canonical `machine_execution_plan` YAML block in the Markdown notes and a standalone `machine_execution_plan.yaml` artifact.
@@ -69,6 +70,8 @@ The generated human MoP content must allow a human operator to recreate source n
 - Letta-backed memory activation.
 - Automatic Qdrant ingestion during generation.
 - Ungated Qdrant writes, deletes, or re-embedding.
+- LLM-generated executable manifests or Helm commands as final truth.
+- LLM approval of the final MoP.
 
 ## 3. Functional Requirements
 
@@ -98,6 +101,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and LangMem-backed memory. |
 | FR-23 | Provide governed REST APIs for artifact preview, full artifact download, generated-folder zip archive, single-run deletion, and bulk artifact cleanup. |
 | FR-24 | Provide an optional, config-gated admin API to ingest completed redacted MoP artifacts into Qdrant for future reference lookup. |
+| FR-25 | Provide optional bounded LLM reasoning for ambiguity detection, public Helm chart hints, install-order sanity, missing manifest/spec explanations, required human inputs, and confidence labels. |
 
 ## 4. Non-Functional Requirements
 

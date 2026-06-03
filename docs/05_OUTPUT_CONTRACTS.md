@@ -315,6 +315,35 @@ minimum_confidence
 These diagnostics must distinguish valid empty responses from invalid structured
 output and from low-confidence suggestions filtered by policy.
 
+Phase 10 bounded reasoning artifact metadata must include:
+
+```text
+bounded_llm_reasoning.enabled
+bounded_llm_reasoning.attempted
+bounded_llm_reasoning.status
+bounded_llm_reasoning.authority_order
+bounded_llm_reasoning.findings[]
+bounded_llm_reasoning.diagnostics
+```
+
+Every accepted finding must include:
+
+```text
+label=llm_suggestion_requires_human_review
+authoritative=false
+executable_yaml_allowed=false
+confidence
+rationale
+evidence_refs
+qdrant_refs
+required_human_inputs
+```
+
+Bounded reasoning findings may appear in `artifact.json`, the human MoP
+Evidence and Inference Appendix, and the Markdown installation notes
+`inferences` block. They must not alter generated manifests, Helm values,
+machine execution commands, or final MoP approval status.
+
 ## 10. MCP Output Contract
 
 MCP tool responses must be agent-readable and include:

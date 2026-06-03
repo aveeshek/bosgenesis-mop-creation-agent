@@ -142,12 +142,20 @@ bosgenesis-mop-creation-agent/
 | `persistence/clickhouse_metrics_store.py` | Stores generation metrics when enabled. |
 | `memory/memory_router.py` | Coordinates optional Redis, pgvector, LangMem, and future Letta memory backends. |
 | `reasoning/planner.py` | Coordinates deterministic and LLM-assisted reasoning for install order, unknowns, and inference labels. |
+| `llm/bounded_reasoning.py` | Builds a redacted evidence pack, optionally runs a LangGraph/LangChain model call, validates `ReasoningEnvelope` output, and returns advisory-only findings. |
 | `llm/langgraph_workflow.py` | Runs standalone REST-triggered autonomous reasoning as a LangGraph workflow with explicit state transitions and repair loops. |
 | `llm/langchain_flow.py` | Provides LangChain model, prompt, and tool adapter helpers used by the LangGraph workflow where useful. |
 | `llm/model_gateway.py` | Encapsulates configured Azure OpenAI or Ollama model profile access. |
+| `llm/models.py` | Defines strict LLM repair and bounded reasoning envelopes, diagnostics, confidence validation, and advisory labels. |
 | `observability/langfuse_tracer.py` | Emits Langfuse traces for prompts, decisions, and generation phases. |
 | `observability/signoz_otel.py` | Emits OpenTelemetry spans and metrics for SigNoz. |
 | `security/redaction.py` | Redacts secrets and sensitive values before prompts, logs, storage, and artifacts. |
+
+Phase 10 bounded reasoning is optional. It may produce `ReasoningFinding`
+records with rationale, confidence, Qdrant citation IDs, and required human
+inputs, but it must set `authoritative=false` and
+`executable_yaml_allowed=false`. Rendering may include those findings in
+appendices and installation-note inference blocks only.
 
 ## 3. API Design
 

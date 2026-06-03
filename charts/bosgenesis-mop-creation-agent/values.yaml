@@ -127,6 +127,7 @@ config:
     standalone_enabled: true
     framework: langgraph-langchain
     default_model: gemma4:26b
+    reasoning_enabled: true
     repair_suggestions_enabled: true
     provider: ollama
     azure_endpoint: ""

@@ -44,6 +44,7 @@ The `machine_execution_plan` block is the primary agent-readable contract. It mu
 - expected outcomes for every command-bearing step;
 - evidence references and inference labels for every step;
 - required human inputs for missing chart references, secret material, and application metadata gaps.
+- bounded LLM reasoning and repair suggestions only as advisory labels, confidence, rationale, and human-review notes.
 
 The same YAML must also be written as `machine_execution_plan.yaml` in the run directory. YAML output must disable aliases/anchors so downstream LLMs can read it without resolving `&id` or `*id` references.
 
@@ -59,6 +60,15 @@ Rendered commands must:
 ## Manifest and values normalization
 
 Rendered snippets are produced by `reconstruction/`. The rendering layer must reference the generated raw manifests and redacted Helm values files, and must not reintroduce blocked resources or secret values into command sections.
+
+## LLM advisory rendering
+
+Bounded reasoning and repair outputs may appear in the Evidence and Inference
+Appendix, `artifact.json`, and the installation notes `inferences` block.
+These outputs must never alter command blocks, generated manifests, Helm values,
+or `machine_execution_plan` executable steps. Every LLM-derived item must be
+labeled `llm_suggestion_requires_human_review`, must carry confidence and
+rationale, and must have `executable_yaml_allowed: false`.
 
 ## Safety
 
