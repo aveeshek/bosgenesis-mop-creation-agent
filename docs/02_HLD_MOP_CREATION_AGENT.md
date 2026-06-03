@@ -71,7 +71,7 @@ flowchart LR
 | Qdrant Retrieval Layer | Read existing vectorized MoP/installation notes for discovered components when enabled; return cited prior references or skip when no match exists. |
 | Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, and application-mode metadata guidance. |
 | Human MoP and Installation Notes Renderer | Generate sample-format human MoP content, a valid PDF placeholder until the production renderer phase, Markdown installation notes for agents, and standalone machine execution YAML. |
-| Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Qdrant writes are out of scope for this agent. |
+| Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Generation-time Qdrant access remains read-only; optional Qdrant ingestion is a separate gated admin flow. |
 | Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
 | Memory Layer | Save and retrieve generation patterns, previous MoPs, template decisions, short-term run state, episodic memory, and knowledge memory. |
 
@@ -193,7 +193,7 @@ flowchart TB
 | PostgreSQL | Read ETL latest snapshot and store request metadata when enabled. |
 | ClickHouse | Read analytical inventory and write generation metrics when enabled. |
 | MongoDB | Store full MoP document and raw generation trace. |
-| Qdrant | Read-only retrieval of existing vectorized MoP/installation-note references for matching components. New ingestion/vectorization is performed by a separate agent. |
+| Qdrant | Read-only generation-time retrieval of existing vectorized MoP/installation-note references for matching components. Optional ingestion of completed redacted artifacts is admin-gated, user-confirmed, and never automatic during generation. |
 | Redis | Optional short-lived cache and idempotency lock. |
 | pgvector | Optional semantic search alternative. |
 | LangMem | Optional memory extraction/update around MoP patterns. |
@@ -246,4 +246,5 @@ flowchart LR
 - Excluded or unsafe resources must be documented as manual notes rather than converted into executable commands.
 - Markdown installation notes must not contain production data and must distinguish observed facts from inferred guidance.
 - Qdrant references are prior guidance only. Retrieved content must be redacted, cited, confidence-scored, and validated against current namespace evidence before influencing output.
+- Qdrant ingestion must never run automatically during generation and must require explicit config enablement plus caller confirmation.
 - Artifact preview, download, archive, and delete operations must stay within the configured artifact storage root and must not expose blocked files or secret material.

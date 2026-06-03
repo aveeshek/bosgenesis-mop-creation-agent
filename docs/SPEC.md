@@ -11,7 +11,8 @@ The documentation set must preserve the original product context:
 - the agent produces a sample-format human MoP artifact, a currently valid PDF placeholder, and LLM/agent-readable Markdown installation notes; production-quality PDF rendering is deferred to the PDF renderer phase;
 - the Markdown installation notes include a canonical `machine_execution_plan` YAML block, and the same plan is also written as a standalone YAML artifact for downstream agents;
 - generated artifacts are retrievable through governed preview, full-file download, generated-folder archive, and housekeeping delete APIs;
-- the agent may read existing vectorized MoP/installation-note references from Qdrant for matching components, but Qdrant ingestion is owned by a separate agent;
+- the agent may read existing vectorized MoP/installation-note references from Qdrant for matching components during generation;
+- optional Qdrant insertion of generated MoP artifacts is a separate gated admin flow that requires explicit user confirmation, and generation remains read-only;
 - Codex integration is through an on-demand MCP server that supports generation, retrieval, configuration inspection, artifact preview, and artifact cleanup;
 - standalone mode is triggered through REST, uses LangGraph/LangChain with a configured LLM profile, and uses agentic memory through LangMem and backing stores;
 - all actions, tool calls, and reasoning decisions must be traceable in Langfuse, SigNoz/OpenTelemetry, and structured logs;

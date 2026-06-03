@@ -34,6 +34,7 @@ The generated human MoP content must allow a human operator to recreate source n
 - Use Data Ingestion Agent/Analytical MoP ETL evidence when available.
 - Query Qdrant for existing vectorized MoP/installation-note references for discovered components when enabled.
 - Use matching Qdrant references as non-authoritative prior guidance with citations, confidence, and validation against current evidence.
+- Optionally ingest completed, redacted MoP artifacts into Qdrant through an explicit admin API. This ingestion path is separate from generation and requires explicit user confirmation.
 - Generate human MoP content in local storage using the approved sample-derived template, plus a valid PDF placeholder until the production PDF renderer phase is implemented.
 - Generate LLM/agent-readable Markdown installation notes in local storage.
 - Generate a canonical `machine_execution_plan` YAML block in the Markdown notes and a standalone `machine_execution_plan.yaml` artifact.
@@ -66,7 +67,8 @@ The generated human MoP content must allow a human operator to recreate source n
 - Private/custom repository discovery.
 - Docker image rebuild inference.
 - Letta-backed memory activation.
-- Qdrant ingestion or vectorization of new MoPs/installation notes. Ingestion is owned by a separate agent.
+- Automatic Qdrant ingestion during generation.
+- Ungated Qdrant writes, deletes, or re-embedding.
 
 ## 3. Functional Requirements
 
@@ -95,6 +97,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-21 | Validate generated artifacts for secret leakage, namespace rewrite, blocked resources, production data leakage, and required sections before publication. |
 | FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and LangMem-backed memory. |
 | FR-23 | Provide governed REST APIs for artifact preview, full artifact download, generated-folder zip archive, single-run deletion, and bulk artifact cleanup. |
+| FR-24 | Provide an optional, config-gated admin API to ingest completed redacted MoP artifacts into Qdrant for future reference lookup. |
 
 ## 4. Non-Functional Requirements
 
@@ -112,6 +115,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | NFR-10 | Must label inferred or unknown installation details instead of presenting them as observed facts. |
 | NFR-11 | Must never copy production data in platform-only or application mode. |
 | NFR-12 | Must record every tool call, reasoning decision, generated step, and validation result with `run_id`, `correlation_id`, and trace context. |
+| NFR-13 | Must keep generation-time Qdrant access read-only; Qdrant ingestion must be explicit, gated, and outside the generation flow. |
 
 ## 5. Runtime Modes
 
@@ -313,6 +317,8 @@ retrieval:
     top_k: 5
     min_score: 0.72
     ingestion_owned_by: separate-agent
+    ingestion_api_enabled: true
+    ingestion_vector_size: 384
 
 observability:
   langfuse:

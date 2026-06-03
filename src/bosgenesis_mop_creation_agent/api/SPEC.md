@@ -24,6 +24,7 @@ GET  /config/effective
 GET  /mcp/tools
 POST /mcp/tools/{tool_name}
 POST /mcp
+POST /references/qdrant/ingest-mop
 ```
 
 ## MCP tools
@@ -60,6 +61,12 @@ mop_creation_effective_config
 - `return_content`: bool.
 - `caller`: string.
 - `correlation_id`: optional string.
+
+`QdrantIngestMoPRequest` must include:
+
+- `mop_id`: generated MoP run to index.
+- `caller`: caller identity.
+- `confirm`: must be `true`.
 
 ## Response contract
 
@@ -120,3 +127,4 @@ storage.
 - Artifact download returns complete approved text artifacts.
 - Artifact archive returns a zip for approved directories such as `generated/`.
 - Housekeeping deletes remove only configured local artifact storage and in-memory run metadata.
+- Qdrant ingestion is a separate admin operation, requires explicit user confirmation, and must not run as part of generation.

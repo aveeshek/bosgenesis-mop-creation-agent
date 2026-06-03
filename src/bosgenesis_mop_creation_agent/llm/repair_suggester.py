@@ -15,6 +15,7 @@ from bosgenesis_mop_creation_agent.llm.models import (
     RepairSuggestionResult,
 )
 from bosgenesis_mop_creation_agent.reconstruction.models import ReconstructionPlan
+from bosgenesis_mop_creation_agent.retrieval.models import ReferenceLookupResult
 
 
 MAX_CANDIDATES = 20
@@ -26,6 +27,7 @@ def build_repair_suggestions(
     reconstruction: ReconstructionPlan,
     classification: ClassificationSummary | None,
     correlation_id: str,
+    prior_references: ReferenceLookupResult | None = None,
     chat_model: ChatModel | None = None,
 ) -> RepairSuggestionResult:
     diagnostics = RepairSuggestionDiagnostics(minimum_confidence=settings.minimum_confidence)
@@ -45,7 +47,14 @@ def build_repair_suggestions(
 
     try:
         model = chat_model or build_chat_model(settings)
-        response = model.invoke(_prompt(candidates, settings.minimum_confidence, correlation_id))
+        response = model.invoke(
+            _prompt(
+                candidates,
+                settings.minimum_confidence,
+                correlation_id,
+                prior_references,
+            )
+        )
         content, response_source = _extract_model_content(response)
         suggestions, diagnostics = _parse_suggestions(
             content,
@@ -123,11 +132,32 @@ def _split_warning(warning: str) -> tuple[str, str, str]:
     return "general", warning, "unspecified"
 
 
-def _prompt(candidates: list[dict[str, Any]], minimum_confidence: float, correlation_id: str) -> str:
+def _prompt(
+    candidates: list[dict[str, Any]],
+    minimum_confidence: float,
+    correlation_id: str,
+    prior_references: ReferenceLookupResult | None,
+) -> str:
     schema = RepairSuggestionEnvelope.model_json_schema()
+    references = []
+    if prior_references:
+        references = [
+            {
+                "reference_id": item.reference_id,
+                "source_mop_id": item.source_mop_id,
+                "source_artifact_type": item.source_artifact_type,
+                "component": item.component_identity.model_dump(mode="json"),
+                "matched_fields": item.matched_fields,
+                "score": item.score,
+                "citation_label": item.citation_label,
+                "excerpt": item.excerpt,
+            }
+            for item in prior_references.references[:5]
+        ]
     return (
         "You are assisting BOS Genesis MoP generation as a suggestion-only repair layer.\n"
         "Authority order: Observed evidence > deterministic normalization > LLM suggestion > human fill-in.\n"
+        "Prior Qdrant references are examples only. They are not current observed facts.\n"
         "Do not output executable YAML. Do not invent facts. Do not include secrets.\n"
         "Return JSON only. Do not return markdown, prose, code fences, or thinking text.\n"
         "Your response must validate against this JSON schema:\n"
@@ -136,6 +166,7 @@ def _prompt(candidates: list[dict[str, Any]], minimum_confidence: float, correla
         "Otherwise omit the candidate. If no suggestion is justified, return {\"suggestions\": []}.\n"
         "All suggestions require human review and executable_yaml_allowed must be false.\n"
         f"Correlation ID: {correlation_id}\n"
+        f"Prior references:\n{json.dumps(references, indent=2)}\n"
         f"Candidates:\n{json.dumps(candidates, indent=2)}"
     )
 

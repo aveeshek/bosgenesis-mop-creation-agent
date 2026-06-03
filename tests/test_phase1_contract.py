@@ -78,7 +78,7 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert payload["artifacts"]["installation_notes_path"].endswith(".installation.md")
     assert payload["content"].startswith("# MoP:")
     assert payload["installation_notes_content"].startswith("---")
-    assert payload["qdrant_lookup_status"] == "not_executed"
+    assert payload["qdrant_lookup_status"] == "disabled"
     assert payload["mcp_sources_attempted"] == [
         "k8s_inspector_mcp",
         "helm_manager_mcp",

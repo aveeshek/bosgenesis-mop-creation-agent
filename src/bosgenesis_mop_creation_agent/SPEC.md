@@ -15,7 +15,7 @@ The package must support:
 - local artifact generation for both the human MoP PDF and Markdown installation notes;
 - standalone `machine_execution_plan.yaml` generation for downstream agents;
 - artifact preview, full-file download, generated-folder zip archive, and housekeeping deletion APIs;
-- optional MongoDB, PostgreSQL, ClickHouse, Redis, pgvector, LangMem, and read-only Qdrant retrieval integrations.
+- optional MongoDB, PostgreSQL, ClickHouse, Redis, pgvector, LangMem, read-only generation-time Qdrant retrieval, and gated Qdrant artifact ingestion integrations.
 
 ## Architectural rule
 
@@ -24,7 +24,7 @@ Runtime modules must separate:
 - deterministic evidence collection, normalization, classification, and validation;
 - non-deterministic LLM reasoning;
 - sample-template document modeling, PDF rendering, and Markdown notes rendering;
-- persistence and read-only prior-reference retrieval;
+- persistence, read-only generation-time prior-reference retrieval, and optional gated reference ingestion;
 - observability/audit.
 
 This separation is required so generated artifacts can be traced, reviewed, reproduced from fixed evidence, and validated before publication.
@@ -33,7 +33,7 @@ This separation is required so generated artifacts can be traced, reviewed, repr
 
 The package generates procedures. It must not execute generated Helm, Kubernetes, database, cache, or stream commands.
 
-Qdrant is read-only for this package. The package may search for existing vectorized MoP/installation-note references for discovered components, but ingestion/vectorization is owned by a separate agent.
+Qdrant is read-only during MoP generation. The package may search for existing vectorized MoP/installation-note references for discovered components. Optional Qdrant ingestion is a separate admin/API flow, requires explicit user confirmation, and must not run during generation.
 
 Artifact lifecycle APIs must remain path-guarded to configured local storage and
 must never expose or delete files outside the MoP artifact root.

@@ -71,13 +71,18 @@ class FeatureSettings(BaseModel):
 
 
 class QdrantRetrievalSettings(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
     mode: str = "read_only"
     endpoint: str | None = None
     collection: str = "mop_installation_notes"
     top_k: int = 5
     min_score: float = 0.72
     ingestion_owned_by: str = "separate-agent"
+    timeout_seconds: float = 5
+    exact_match_bonus: float = 0.4
+    ingestion_api_enabled: bool = True
+    ingestion_vector_size: int = 384
+    max_ingestion_artifact_bytes: int = 262144
 
 
 class RetrievalSettings(BaseModel):
@@ -264,6 +269,13 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "OLLAMA_GEMMA4_MODEL": ("llm", "model_profiles", "gemma4", "model"),
         "OLLAMA_LLAMA70B_BASE_URL": ("llm", "model_profiles", "llama70b", "base_url"),
         "OLLAMA_LLAMA70B_MODEL": ("llm", "model_profiles", "llama70b", "model"),
+        "QDRANT_ENABLED": ("retrieval", "qdrant", "enabled"),
+        "QDRANT_ENDPOINT": ("retrieval", "qdrant", "endpoint"),
+        "QDRANT_COLLECTION": ("retrieval", "qdrant", "collection"),
+        "QDRANT_TOP_K": ("retrieval", "qdrant", "top_k"),
+        "QDRANT_MIN_SCORE": ("retrieval", "qdrant", "min_score"),
+        "QDRANT_INGESTION_API_ENABLED": ("retrieval", "qdrant", "ingestion_api_enabled"),
+        "QDRANT_INGESTION_VECTOR_SIZE": ("retrieval", "qdrant", "ingestion_vector_size"),
     }
     for env_name, path in env_map.items():
         env_value = os.getenv(env_name)
@@ -273,10 +285,15 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         for nested_key in path[1:-1]:
             parent = parent[nested_key]
         value: Any
-        if env_name.endswith("_PORT"):
+        if env_name.endswith("_PORT") or env_name in {
+            "QDRANT_TOP_K",
+            "QDRANT_INGESTION_VECTOR_SIZE",
+        }:
             value = int(env_value)
         elif env_name.endswith("_ENABLED"):
             value = env_value.lower() in {"1", "true", "yes", "on"}
+        elif env_name == "QDRANT_MIN_SCORE":
+            value = float(env_value)
         else:
             value = env_value
         parent[path[-1]] = value

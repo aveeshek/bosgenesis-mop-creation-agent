@@ -357,7 +357,7 @@ Validation failure for secret leakage, blocked resources, or production data lea
 
 ## 11. Optional Store and Retrieval Contracts
 
-MongoDB, PostgreSQL metadata, ClickHouse metrics, Redis, pgvector, LangMem, and read-only Qdrant retrieval are optional.
+MongoDB, PostgreSQL metadata, ClickHouse metrics, Redis, pgvector, LangMem, read-only generation-time Qdrant retrieval, and gated Qdrant artifact ingestion are optional.
 
 Optional persisted records must include:
 
@@ -383,4 +383,22 @@ Qdrant retrieval records consumed by the agent must include:
 - ingestion timestamp when available;
 - citation text or reference key.
 
-The MoP Creation Agent must not write, upsert, delete, embed, or ingest Qdrant records. Qdrant ingestion is owned by a separate agent.
+The MoP Creation Agent must not write, upsert, delete, embed, or ingest Qdrant records during generation. Optional Qdrant ingestion is available only through a separate admin REST endpoint, must require `confirm=true`, and must index only completed redacted MoP artifacts.
+
+Optional ingestion endpoint:
+
+```text
+POST /references/qdrant/ingest-mop
+```
+
+Request:
+
+```json
+{
+  "mop_id": "mop-uuid",
+  "caller": "admin-or-automation",
+  "confirm": true
+}
+```
+
+The ingestion response must include status, `mop_id`, collection name, and inserted point count when successful.

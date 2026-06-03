@@ -33,3 +33,8 @@ class MoPGenerationRequest(BaseModel):
     caller: str = "api"
     correlation_id: str | None = None
 
+
+class QdrantIngestMoPRequest(BaseModel):
+    mop_id: str
+    caller: str = "api"
+    confirm: bool = False

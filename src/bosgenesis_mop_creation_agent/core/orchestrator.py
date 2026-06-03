@@ -18,6 +18,7 @@ from bosgenesis_mop_creation_agent.mcp_clients.enrichment import McpEnrichmentSe
 from bosgenesis_mop_creation_agent.mcp_clients.helm_manager_client import HelmManagerClient
 from bosgenesis_mop_creation_agent.mcp_clients.k8s_inspector_client import K8sInspectorClient
 from bosgenesis_mop_creation_agent.rendering.artifact_writer import LocalArtifactWriter
+from bosgenesis_mop_creation_agent.retrieval.reference_lookup import ReferenceLookupService
 from bosgenesis_mop_creation_agent.sources.clickhouse_snapshot_reader import ClickHouseSnapshotReader
 from bosgenesis_mop_creation_agent.sources.postgres_snapshot_reader import PostgresSnapshotReader
 from bosgenesis_mop_creation_agent.sources.snapshot_selector import SnapshotSelector
@@ -41,6 +42,7 @@ class MoPCreationOrchestrator:
             helm_client=HelmManagerClient.from_settings(settings.mcp.helm_manager),
             data_ingestion_client=DataIngestionClient.from_settings(settings.mcp.data_ingestion_agent),
         )
+        self._reference_lookup = ReferenceLookupService(settings.retrieval.qdrant)
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._classifications: dict[str, ClassificationSummary] = {}
         self._latest_mop_id: str | None = None
@@ -147,6 +149,10 @@ class MoPCreationOrchestrator:
         classification = classify_inventory(inventory)
         if classification:
             warnings.extend(classification.warnings)
+        reference_result = self._reference_lookup.lookup(
+            inventory=inventory,
+            classification=classification,
+        )
         artifact_result = self._artifact_writer.write(
             mop_id=mop_id,
             run_id=run_id,
@@ -157,6 +163,7 @@ class MoPCreationOrchestrator:
             warnings=warnings,
             inventory=inventory,
             classification=classification,
+            qdrant_references=reference_result,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
             mcp_sources_attempted=enrichment_result.sources_attempted,
         )
@@ -170,8 +177,8 @@ class MoPCreationOrchestrator:
             target_namespace=request.target_namespace,
             local_file_path=artifact_result.human_mop_pdf_path,
             mongo_saved=False,
-            qdrant_reference_count=0,
-            qdrant_lookup_status="not_executed",
+            qdrant_reference_count=reference_result.reference_count,
+            qdrant_lookup_status=reference_result.status,
             inventory_source=inventory.source if inventory else None,
             source_snapshot_id=inventory.snapshot_id if inventory else request.source_snapshot_id,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
@@ -418,6 +425,23 @@ class MoPCreationOrchestrator:
             "filename": archive_path.name,
             "allowed_extensions": allowed_extensions,
         }
+
+    def ingest_mop_to_qdrant(self, mop_id: str) -> dict:
+        response = self.get(mop_id)
+        if response is None:
+            return {"status": "not_found", "mop_id": mop_id}
+        run_dir = Path(response.artifacts.run_directory_path).resolve()
+        storage_root = Path(self._settings.agent.local_storage_path).resolve()
+        if not _is_safe_artifact_path(storage_root, run_dir) or not run_dir.is_dir():
+            return {
+                "status": "not_found",
+                "mop_id": mop_id,
+                "error": "artifact_directory_not_found",
+            }
+        return self._reference_lookup.ingest_mop_artifacts(
+            mop_id=mop_id,
+            run_directory=run_dir,
+        )
 
     def delete_mop(self, mop_id: str) -> dict:
         storage_root = Path(self._settings.agent.local_storage_path).resolve()

@@ -11,7 +11,7 @@ from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.common.logging import get_logger
 from bosgenesis_mop_creation_agent.config.settings import Settings
 from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
-from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest, QdrantIngestMoPRequest
 from bosgenesis_mop_creation_agent.models.responses import (
     McpToolResponse,
     MoPGenerationResponse,
@@ -104,6 +104,37 @@ def delete_all_mops(confirm: bool, request: Request) -> dict[str, Any]:
     result = _orchestrator(request).delete_all_mops(confirm=confirm)
     if result.get("status") == "denied":
         raise HTTPException(status_code=403, detail=result)
+    return result
+
+
+@router.post("/references/qdrant/ingest-mop")
+def ingest_mop_references(
+    request_body: QdrantIngestMoPRequest,
+    request: Request,
+) -> dict[str, Any]:
+    settings = _settings(request)
+    if not settings.retrieval.qdrant.ingestion_api_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "status": "disabled",
+                "error": "qdrant_ingestion_api_disabled",
+            },
+        )
+    if not request_body.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "denied",
+                "error": "confirm_required",
+                "required_confirm": True,
+            },
+        )
+    result = _orchestrator(request).ingest_mop_to_qdrant(request_body.mop_id)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=result)
+    if result.get("status") in {"disabled", "unavailable"}:
+        raise HTTPException(status_code=503, detail=result)
     return result
 
 

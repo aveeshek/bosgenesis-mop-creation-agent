@@ -58,9 +58,10 @@ bosgenesis-mop-creation-agent/
         command_builder.py
         planner.py
       retrieval/
-        qdrant_reference_finder.py
         component_query_builder.py
-        reference_models.py
+        qdrant_client.py
+        reference_lookup.py
+        models.py
       rendering/
         mop_template.py
         mop_renderer.py
@@ -125,8 +126,9 @@ bosgenesis-mop-creation-agent/
 | `classification/helm_detector.py` | Detects Helm ownership from labels, annotations, release records, and rendered manifests. |
 | `classification/safety_classifier.py` | Applies resource safety policy before a command is generated. |
 | `retrieval/component_query_builder.py` | Builds component-level Qdrant lookup queries from Helm releases, labels, app names, image names, services, and application-mode metadata. |
-| `retrieval/qdrant_reference_finder.py` | Reads Qdrant for existing vectorized MoP/installation-note references and returns cited matches when enabled. |
-| `retrieval/reference_models.py` | Defines retrieved-reference metadata, score, component identity, source artifact, and citation fields. |
+| `retrieval/qdrant_client.py` | Uses the Qdrant HTTP API for payload-filtered read-only lookup during generation and optional gated artifact ingestion outside generation. |
+| `retrieval/reference_lookup.py` | Coordinates component queries, Qdrant availability/no-match behavior, local scoring/filtering, citations, and ingestion payload preparation. |
+| `retrieval/models.py` | Defines component identity, query, retrieved-reference metadata, score, source artifact, and citation fields. |
 | `reconstruction/manifest_normalizer.py` | Cleans raw Kubernetes manifests, removes runtime metadata/status, and rewrites namespace. |
 | `reconstruction/helm_values.py` | Extracts Helm values evidence and writes redacted values files. |
 | `reconstruction/command_builder.py` | Builds copyable Helm and Kubernetes dry-run, apply/install, validation, and rollback commands. |
@@ -405,7 +407,7 @@ The notes are intended for autonomous execution by another LLM/agent, but this a
 
 ## 10. Qdrant Reference Retrieval
 
-Qdrant is a read-only reference source for this agent. It may contain vectorized MoPs and installation notes produced by a separate ingestion agent.
+Qdrant is a read-only reference source during MoP generation. It may contain vectorized MoPs and installation notes produced by a separate ingestion agent or by the optional gated admin ingestion API.
 
 Lookup behavior:
 
@@ -415,7 +417,14 @@ Lookup behavior:
 - redact retrieved content before prompts, logs, memory, and rendered artifacts;
 - cite accepted references in evidence sections and confidence rationale;
 - skip with a warning when Qdrant is disabled, unavailable, or has no component match;
-- never write, upsert, delete, re-embed, or ingest documents into Qdrant.
+- never write, upsert, delete, re-embed, or ingest documents into Qdrant during generation.
+
+Optional ingestion behavior:
+
+- `POST /references/qdrant/ingest-mop` may index completed redacted MoP artifacts only when explicitly enabled by configuration;
+- ingestion requires `confirm=true`;
+- ingestion is not called by `POST /mop-creation/generate`;
+- generated references remain prior guidance only on later runs.
 
 Retrieved references are non-authoritative. Current namespace evidence from ETL snapshots and MCP enrichment remains the source of truth.
 
@@ -458,7 +467,7 @@ MongoDB document shape:
 }
 ```
 
-This agent does not persist generated chunks into Qdrant. Any Qdrant document metadata consumed by the retrieval layer should include component name, artifact type, source artifact ID, section name, environment/namespace context when known, embedding model/version, ingestion timestamp, and original evidence references.
+This agent does not persist generated chunks into Qdrant during generation. Any Qdrant document metadata consumed by the retrieval layer should include component name, artifact type, source artifact ID, section name, environment/namespace context when known, embedding model/version, ingestion timestamp, and original evidence references.
 
 ## 12. Error Handling
 

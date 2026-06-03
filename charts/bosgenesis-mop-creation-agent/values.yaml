@@ -90,11 +90,16 @@ config:
     qdrant:
       enabled: true
       mode: read_only
-      endpoint: http://qdrant.bosgenesis.local:6333
+      endpoint: http://qdrant.bosgenesis.svc.cluster.local:6333
       collection: mop_installation_notes
       top_k: 5
       min_score: 0.72
       ingestion_owned_by: separate-agent
+      timeout_seconds: 5
+      exact_match_bonus: 0.4
+      ingestion_api_enabled: true
+      ingestion_vector_size: 384
+      max_ingestion_artifact_bytes: 262144
   features:
     artifact_preview:
       enabled: true

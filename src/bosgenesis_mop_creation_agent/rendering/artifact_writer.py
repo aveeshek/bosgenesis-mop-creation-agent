@@ -23,6 +23,7 @@ from bosgenesis_mop_creation_agent.reconstruction.models import (
     ReconstructionPlan,
 )
 from bosgenesis_mop_creation_agent.reconstruction.planner import build_reconstruction_plan
+from bosgenesis_mop_creation_agent.retrieval.models import ReferenceLookupResult
 from bosgenesis_mop_creation_agent.sources.snapshot_models import NormalizedInventory
 
 
@@ -79,6 +80,7 @@ class LocalArtifactWriter:
         warnings: list[str],
         inventory: NormalizedInventory | None = None,
         classification: ClassificationSummary | None = None,
+        qdrant_references: ReferenceLookupResult | None = None,
         snapshot_sources_attempted: list[str] | None = None,
         mcp_sources_attempted: list[str] | None = None,
     ) -> ArtifactWriteResult:
@@ -110,8 +112,15 @@ class LocalArtifactWriter:
             reconstruction=reconstruction,
             classification=classification,
             correlation_id=correlation_id,
+            prior_references=qdrant_references,
         )
-        all_warnings = [*warnings, *reconstruction.warnings, *repair_suggestions.warnings]
+        reference_result = qdrant_references or ReferenceLookupResult()
+        all_warnings = [
+            *warnings,
+            *reconstruction.warnings,
+            *reference_result.warnings,
+            *repair_suggestions.warnings,
+        ]
 
         context = self._build_context(
             mop_id=mop_id,
@@ -125,6 +134,7 @@ class LocalArtifactWriter:
             classification=classification,
             reconstruction=reconstruction,
             repair_suggestions=repair_suggestions,
+            qdrant_references=reference_result,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
             mcp_sources_attempted=mcp_sources_attempted or [],
             run_dir=run_dir,
@@ -162,7 +172,7 @@ class LocalArtifactWriter:
             "external_calls": {
                 "kubernetes": "k8s_inspector_mcp" in (mcp_sources_attempted or []),
                 "helm": "helm_manager_mcp" in (mcp_sources_attempted or []),
-                "qdrant": False,
+                "qdrant": reference_result.enabled,
                 "datastores": True,
             },
             "inventory": {
@@ -174,11 +184,13 @@ class LocalArtifactWriter:
             },
             "classification": _classification_manifest(classification),
             "reconstruction": _reconstruction_manifest(reconstruction),
+            "qdrant_prior_references": reference_result.model_dump(mode="json"),
             "machine_execution_plan": _machine_execution_plan(
                 reconstruction=reconstruction,
                 classification=classification,
                 target_namespace=request.target_namespace,
                 generation_mode=request.mode.value,
+                qdrant_references=reference_result,
             ),
             "llm_repair_suggestions": repair_suggestions.model_dump(mode="json"),
             "mcp": {
@@ -228,6 +240,7 @@ class LocalArtifactWriter:
         classification: ClassificationSummary | None,
         reconstruction: ReconstructionPlan,
         repair_suggestions: RepairSuggestionResult,
+        qdrant_references: ReferenceLookupResult,
         snapshot_sources_attempted: list[str],
         mcp_sources_attempted: list[str],
         run_dir: Path,
@@ -338,14 +351,14 @@ class LocalArtifactWriter:
                 snapshot_sources_attempted,
                 mcp_sources_attempted,
             ),
-            "qdrant_prior_references": "- None. Qdrant lookup is not executed in Phase 6.",
+            "qdrant_prior_references": _qdrant_references_markdown(qdrant_references),
             "inference_labels_and_rationale": (
                 _repair_suggestions_markdown(repair_suggestions)
             ),
             "excluded_resources": _excluded_resources_markdown(classification),
             "generation_status": "generated",
-            "qdrant_lookup_status": "not_executed",
-            "qdrant_reference_count": "0",
+            "qdrant_lookup_status": qdrant_references.status,
+            "qdrant_reference_count": str(qdrant_references.reference_count),
             "required_human_inputs_yaml": _required_human_inputs_yaml(
                 reconstruction,
                 classification,
@@ -359,7 +372,7 @@ class LocalArtifactWriter:
                 "data_ingestion_mcp",
                 mcp_sources_attempted,
             ),
-            "qdrant_references_yaml": empty_yaml_list,
+            "qdrant_references_yaml": _qdrant_references_yaml(qdrant_references),
             "helm_releases_yaml": _helm_inventory_yaml(inventory),
             "raw_kubernetes_resources_yaml": _resource_inventory_yaml(inventory, classification),
             "application_targets_yaml": empty_yaml_list,
@@ -436,6 +449,7 @@ class LocalArtifactWriter:
                 classification=classification,
                 target_namespace=request.target_namespace,
                 generation_mode=request.mode.value,
+                qdrant_references=qdrant_references,
             ),
             "human_mop_pdf_path": str(human_mop_pdf_path),
             "installation_notes_path": str(installation_notes_path),
@@ -451,6 +465,7 @@ def _machine_execution_plan_yaml(
     classification: ClassificationSummary | None,
     target_namespace: str,
     generation_mode: str,
+    qdrant_references: ReferenceLookupResult | None = None,
 ) -> str:
     return yaml.dump(
         _machine_execution_plan(
@@ -458,6 +473,7 @@ def _machine_execution_plan_yaml(
             classification=classification,
             target_namespace=target_namespace,
             generation_mode=generation_mode,
+            qdrant_references=qdrant_references or ReferenceLookupResult(),
         ),
         Dumper=_NoAliasSafeDumper,
         sort_keys=False,
@@ -471,6 +487,7 @@ def _machine_execution_plan(
     classification: ClassificationSummary | None,
     target_namespace: str,
     generation_mode: str,
+    qdrant_references: ReferenceLookupResult,
 ) -> dict[str, Any]:
     phases = [
         _phase(
@@ -629,7 +646,22 @@ def _machine_execution_plan(
                 "never_copy_secret_values": True,
                 "target_namespace_only": target_namespace,
                 "llm_suggestions_are_not_authority": True,
+                "qdrant_references_are_prior_guidance_only": True,
             },
+            "prior_references": [
+                {
+                    "reference_id": reference.reference_id,
+                    "citation_label": reference.citation_label,
+                    "component": (
+                        f"{reference.component_identity.kind}/"
+                        f"{reference.component_identity.name}"
+                    ),
+                    "source_mop_id": reference.source_mop_id,
+                    "score": reference.score,
+                    "matched_fields": reference.matched_fields,
+                }
+                for reference in qdrant_references.references
+            ],
             "dependency_graph": [
                 {"phase_id": phase["phase_id"], "depends_on": phase["depends_on"]}
                 for phase in phases
@@ -1196,6 +1228,58 @@ def _repair_suggestions_markdown(result: RepairSuggestionResult) -> str:
             f"{suggestion.target_type}:{suggestion.target_name} - {suggestion.suggestion}"
         )
     return "\n".join(lines)
+
+
+def _qdrant_references_markdown(result: ReferenceLookupResult) -> str:
+    if not result.enabled:
+        return "- qdrant_lookup: disabled"
+    lines = [
+        f"- qdrant_lookup_status: {result.status}",
+        "- authority: prior_reference_only_not_current_observed_fact",
+    ]
+    if not result.references:
+        lines.append("- qdrant_references: none")
+        return "\n".join(lines)
+    for reference in result.references:
+        component = reference.component_identity
+        lines.append(
+            f"- {reference.reference_id}: {component.kind}/{component.name} "
+            f"score={reference.score:.2f} source_mop={reference.source_mop_id or 'unknown'} "
+            f"matched={','.join(reference.matched_fields)}"
+        )
+    return "\n".join(lines)
+
+
+def _qdrant_references_yaml(result: ReferenceLookupResult) -> str:
+    if not result.references:
+        return "  []"
+    blocks = []
+    for reference in result.references:
+        component = reference.component_identity
+        blocks.append(
+            "  - reference_id: {reference_id}\n"
+            "    citation_label: prior_reference_only_not_current_fact\n"
+            "    source_mop_id: {source_mop_id}\n"
+            "    source_artifact_type: {source_artifact_type}\n"
+            "    source_namespace: {source_namespace}\n"
+            "    component: {kind}/{name}\n"
+            "    score: {score:.4f}\n"
+            "    confidence: {confidence}\n"
+            "    matched_fields: {matched_fields}\n"
+            "    redaction_status: {redaction_status}".format(
+                reference_id=reference.reference_id,
+                source_mop_id=reference.source_mop_id or "",
+                source_artifact_type=reference.source_artifact_type or "",
+                source_namespace=reference.source_namespace or "",
+                kind=component.kind,
+                name=component.name,
+                score=reference.score,
+                confidence=reference.confidence,
+                matched_fields=", ".join(reference.matched_fields),
+                redaction_status=reference.redaction_status,
+            )
+        )
+    return "\n".join(blocks)
 
 
 def _inferences_yaml(result: RepairSuggestionResult) -> str:

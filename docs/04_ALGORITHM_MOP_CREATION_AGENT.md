@@ -301,7 +301,23 @@ function lookup_qdrant_references(classified, inventory):
     return references
 ```
 
-Qdrant references are prior installation knowledge only. They can inform reasoning and template wording, but they must not override current namespace evidence. The agent never writes to Qdrant; vectorization and ingestion are owned by a separate agent.
+Qdrant references are prior installation knowledge only. They can inform reasoning and template wording, but they must not override current namespace evidence. Generation never writes to Qdrant.
+
+Optional ingestion is a separate admin/API algorithm:
+
+```text
+function ingest_completed_mop(mop_id, confirm):
+    require qdrant.ingestion_api_enabled == true
+    require confirm == true
+    resolve mop_id under configured artifact storage root
+    read artifact.json, human MoP markdown, installation notes, and machine_execution_plan.yaml
+    redact all text before payload creation
+    derive component metadata from generated artifact manifest
+    upsert reference payloads into Qdrant
+    return point count and Qdrant status
+```
+
+This ingestion path must not be called from `generate_mop`.
 
 ## 7. Manifest Normalization Algorithm
 

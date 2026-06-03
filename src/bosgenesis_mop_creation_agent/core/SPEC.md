@@ -23,6 +23,7 @@ local artifact housekeeping.
 - Keep in-memory run state for `accepted`, `generated`, and `failed` runs.
 - List, preview, download, and archive generated local artifacts.
 - Delete one MoP run or all local MoP artifacts with storage-root guardrails.
+- Optionally ingest completed redacted MoP artifacts into Qdrant through a config-gated admin flow. This must never be invoked by generation.
 
 ## Run identifiers
 
@@ -60,6 +61,17 @@ render Markdown installation notes and machine execution plan YAML
 validate artifacts
 persist artifacts
 store generated response
+```
+
+Optional Qdrant ingestion sequence:
+
+```text
+validate ingestion config enabled
+require confirm=true
+resolve mop_id under artifact storage root
+build redacted reference payloads from completed artifacts
+upsert reference payloads to Qdrant
+return point count and status
 ```
 
 ## Failure policy
