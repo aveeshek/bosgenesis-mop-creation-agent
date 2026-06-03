@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
+import shutil
 from threading import Lock, Thread
 from uuid import uuid4
 
@@ -342,6 +343,150 @@ class MoPCreationOrchestrator:
             "content": content,
         }
 
+    def artifact_download(self, mop_id: str, relative_path: str) -> dict | None:
+        response = self.get(mop_id)
+        if response is None:
+            return None
+        run_dir = Path(response.artifacts.run_directory_path).resolve()
+        target = (run_dir / relative_path).resolve()
+        if not _is_safe_artifact_path(run_dir, target):
+            return {
+                "status": "denied",
+                "mop_id": mop_id,
+                "path": relative_path,
+                "error": "path_outside_artifact_directory",
+            }
+        if target.suffix.lower() not in self._settings.features.artifact_preview.allowed_extensions:
+            return {
+                "status": "denied",
+                "mop_id": mop_id,
+                "path": relative_path,
+                "error": "extension_not_downloadable",
+            }
+        if not target.is_file():
+            return {
+                "status": "not_found",
+                "mop_id": mop_id,
+                "path": relative_path,
+                "error": "artifact_file_not_found",
+            }
+        return {
+            "status": "ok",
+            "mop_id": mop_id,
+            "path": target.relative_to(run_dir).as_posix(),
+            "file_path": str(target),
+            "filename": target.name,
+            "size_bytes": target.stat().st_size,
+        }
+
+    def artifact_archive(self, mop_id: str, prefix: str) -> dict | None:
+        response = self.get(mop_id)
+        if response is None:
+            return None
+        run_dir = Path(response.artifacts.run_directory_path).resolve()
+        normalized_prefix = prefix.strip().replace("\\", "/").strip("/")
+        if not normalized_prefix:
+            return {
+                "status": "denied",
+                "mop_id": mop_id,
+                "prefix": prefix,
+                "error": "archive_prefix_required",
+            }
+        target_dir = (run_dir / normalized_prefix).resolve()
+        if not _is_safe_artifact_path(run_dir, target_dir):
+            return {
+                "status": "denied",
+                "mop_id": mop_id,
+                "prefix": prefix,
+                "error": "path_outside_artifact_directory",
+            }
+        if not target_dir.is_dir():
+            return {
+                "status": "not_found",
+                "mop_id": mop_id,
+                "prefix": prefix,
+                "error": "artifact_directory_not_found",
+            }
+        archive_path = run_dir / f"{normalized_prefix.replace('/', '-')}.zip"
+        allowed_extensions = set(self._settings.features.artifact_preview.allowed_extensions)
+        return {
+            "status": "ok",
+            "mop_id": mop_id,
+            "prefix": normalized_prefix + "/",
+            "directory_path": str(target_dir),
+            "archive_path": str(archive_path),
+            "filename": archive_path.name,
+            "allowed_extensions": allowed_extensions,
+        }
+
+    def delete_mop(self, mop_id: str) -> dict:
+        storage_root = Path(self._settings.agent.local_storage_path).resolve()
+        target = (storage_root / mop_id).resolve()
+        if not _is_safe_artifact_path(storage_root, target):
+            return {
+                "status": "denied",
+                "mop_id": mop_id,
+                "error": "path_outside_storage_directory",
+            }
+        removed = _remove_directory(target)
+        with self._lock:
+            existed_in_memory = mop_id in self._responses
+            self._responses.pop(mop_id, None)
+            self._classifications.pop(mop_id, None)
+            if self._latest_mop_id == mop_id:
+                self._latest_mop_id = next(reversed(self._responses), None)
+        return {
+            "status": "deleted" if removed["existed"] or existed_in_memory else "not_found",
+            "mop_id": mop_id,
+            "artifact_directory": str(target),
+            "artifact_directory_existed": removed["existed"],
+            "removed_file_count": removed["file_count"],
+            "removed_directory_count": removed["directory_count"],
+            "removed_size_bytes": removed["size_bytes"],
+            "in_memory_record_existed": existed_in_memory,
+        }
+
+    def delete_all_mops(self, *, confirm: bool) -> dict:
+        if not confirm:
+            return {
+                "status": "denied",
+                "error": "confirm_required",
+                "required_confirm": True,
+            }
+        storage_root = Path(self._settings.agent.local_storage_path).resolve()
+        storage_root.mkdir(parents=True, exist_ok=True)
+        removed_items = []
+        for target in sorted(item for item in storage_root.iterdir() if item.is_dir()):
+            if not _is_safe_artifact_path(storage_root, target.resolve()):
+                continue
+            removed = _remove_directory(target.resolve())
+            removed_items.append(
+                {
+                    "mop_id": target.name,
+                    "artifact_directory": str(target.resolve()),
+                    "removed_file_count": removed["file_count"],
+                    "removed_directory_count": removed["directory_count"],
+                    "removed_size_bytes": removed["size_bytes"],
+                }
+            )
+        with self._lock:
+            in_memory_count = len(self._responses)
+            self._responses.clear()
+            self._classifications.clear()
+            self._latest_mop_id = None
+        return {
+            "status": "deleted",
+            "artifact_storage_path": str(storage_root),
+            "removed_mop_count": len(removed_items),
+            "removed_file_count": sum(item["removed_file_count"] for item in removed_items),
+            "removed_directory_count": sum(
+                item["removed_directory_count"] for item in removed_items
+            ),
+            "removed_size_bytes": sum(item["removed_size_bytes"] for item in removed_items),
+            "removed_mops": removed_items,
+            "removed_in_memory_record_count": in_memory_count,
+        }
+
 
 PhaseOneMoPCreationOrchestrator = MoPCreationOrchestrator
 
@@ -391,3 +536,29 @@ def _is_safe_artifact_path(run_dir: Path, target: Path) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _remove_directory(target: Path) -> dict:
+    if not target.is_dir():
+        return {
+            "existed": False,
+            "file_count": 0,
+            "directory_count": 0,
+            "size_bytes": 0,
+        }
+    file_count = 0
+    directory_count = 0
+    size_bytes = 0
+    for item in target.rglob("*"):
+        if item.is_file():
+            file_count += 1
+            size_bytes += item.stat().st_size
+        elif item.is_dir():
+            directory_count += 1
+    shutil.rmtree(target)
+    return {
+        "existed": True,
+        "file_count": file_count,
+        "directory_count": directory_count + 1,
+        "size_bytes": size_bytes,
+    }

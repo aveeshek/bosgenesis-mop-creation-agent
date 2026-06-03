@@ -5,15 +5,15 @@
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
 **Target namespace:** Provided at runtime  
-**Primary purpose:** Generate a human-executable Method of Procedure (MoP) PDF and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
+**Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates a safe, line-by-line MoP PDF rendered from the approved sample-derived MoP template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived MoP template. The current implementation writes a valid PDF placeholder; production-quality PDF rendering is deferred. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed short-term, episodic, and knowledge memory.
 
 ## 1. Suggested Project Structure
 
-The future implementation should preserve the spec-driven repository shape while adding source modules under `src/bosgenesis_mop_creation_agent/`.
+The implementation preserves the spec-driven repository shape with source modules under `src/bosgenesis_mop_creation_agent/`.
 
 ```text
 bosgenesis-mop-creation-agent/
@@ -113,8 +113,8 @@ bosgenesis-mop-creation-agent/
 | Module | Responsibility |
 |---|---|
 | `api/app.py` | FastAPI application factory and middleware setup. |
-| `api/routes.py` | REST endpoints for MoP generation, retrieval, and health. |
-| `api/mcp.py` | MCP tools for Codex-driven generation, refinement, retrieval, and health. |
+| `api/routes.py` | REST endpoints for MoP generation, retrieval, health, classification, artifact listing, preview, download, archive, and cleanup. |
+| `api/mcp.py` | MCP tools for Codex-driven generation, retrieval, artifact preview, cleanup, configuration inspection, and health. |
 | `core/orchestrator.py` | Main MoP generation flow. |
 | `sources/postgres_snapshot_reader.py` | Reads latest ETL snapshot from PostgreSQL. |
 | `sources/clickhouse_snapshot_reader.py` | Reads latest analytical snapshot from ClickHouse. |
@@ -132,8 +132,8 @@ bosgenesis-mop-creation-agent/
 | `reconstruction/command_builder.py` | Builds copyable Helm and Kubernetes dry-run, apply/install, validation, and rollback commands. |
 | `reconstruction/planner.py` | Writes generated manifests/values and returns a platform reconstruction plan for rendering. |
 | `rendering/mop_renderer.py` | Builds the sample-derived human MoP document model. |
-| `rendering/pdf_renderer.py` | Renders the human MoP document model to PDF. |
-| `rendering/installation_notes_renderer.py` | Generates LLM/agent-readable Markdown installation notes. |
+| `rendering/pdf_renderer.py` | Produces the current valid PDF placeholder; production-quality PDF rendering is deferred to a later phase. |
+| `rendering/installation_notes_renderer.py` | Generates LLM/agent-readable Markdown installation notes with canonical `machine_execution_plan` YAML. |
 | `persistence/local_storage.py` | Writes Markdown and generated snippets to PVC/local path. |
 | `persistence/mongodb_store.py` | Stores full MoP document and generation trace when enabled. |
 | `persistence/postgres_metadata_store.py` | Stores run and artifact metadata when enabled. |
@@ -162,6 +162,13 @@ flowchart LR
 POST /mop-creation/generate
 GET  /mop-creation/{mop_id}
 GET  /mop-creation/latest
+GET  /mop-creation/{mop_id}/classification
+GET  /mop-creation/{mop_id}/artifacts
+GET  /mop-creation/{mop_id}/artifacts/preview
+GET  /mop-creation/{mop_id}/artifacts/download
+GET  /mop-creation/{mop_id}/artifacts/archive
+DELETE /mop-creation/{mop_id}
+DELETE /mop-creation
 GET  /health
 GET  /config/effective
 ```
@@ -171,9 +178,13 @@ GET  /config/effective
 ```text
 mop_creation_health
 mop_creation_generate
-mop_creation_refine
 mop_creation_get
 mop_creation_latest
+mop_creation_classification
+mop_creation_artifacts
+mop_creation_artifact_preview
+mop_creation_delete
+mop_creation_delete_all
 mop_creation_effective_config
 ```
 
@@ -207,7 +218,11 @@ MoPGenerationResponse
 - target_namespace: string
 - status: string
 - human_mop_pdf_path: string
+- human_mop_markdown_path: string
 - installation_notes_path: string
+- machine_execution_plan_path: string
+- artifact_manifest_path: string
+- run_directory_path: string
 - content: optional string
 - installation_notes_content: optional string
 - resource_count: integer
@@ -247,7 +262,7 @@ sequenceDiagram
     Q-->>O: cited references or no-match warning
     O->>L: infer ambiguous install order, public repo/chart hints, and unknowns using current evidence plus validated prior references when needed
     O->>N: sanitize and rewrite manifests
-    O->>R: render MoP PDF and installation notes
+    O->>R: render human MoP, PDF placeholder, installation notes, and machine plan YAML
     O->>P: save local + optional stores
     O->>T: finish trace
     O-->>API: response
@@ -372,9 +387,11 @@ Application-mode collectors must use explicitly provided read-only credentials o
 
 ## 9. Installation Notes Logic
 
-The Markdown installation notes are generated alongside the human MoP PDF. They must contain:
+The Markdown installation notes are generated alongside the human MoP artifacts. They must contain:
 
 - structured metadata;
+- canonical `machine_execution_plan` YAML block;
+- standalone `machine_execution_plan.yaml` with YAML aliases disabled;
 - execution phases;
 - dependency graph;
 - command blocks;
@@ -412,6 +429,11 @@ Local storage is always enabled:
 /data/mops/<mop-id>/generated/*.yaml
 /data/mops/<mop-id>/values/*.yaml
 /data/mops/<mop-id>/evidence/*.json
+/data/mops/<mop-id>/artifact.json
+/data/mops/<mop-id>/human-mop/*.md
+/data/mops/<mop-id>/human-mop/*.pdf
+/data/mops/<mop-id>/installation-notes/*.installation.md
+/data/mops/<mop-id>/installation-notes/machine_execution_plan.yaml
 ```
 
 MongoDB document shape:
@@ -471,6 +493,10 @@ render_installation_notes
 persist_mop
 validate_artifact
 return_response
+artifact_preview
+artifact_download
+artifact_archive
+artifact_delete
 llm_reasoning_started
 llm_reasoning_completed
 installation_notes_rendered
@@ -482,19 +508,20 @@ Each event must carry `run_id`, `correlation_id`, source namespace, target names
 
 | Test | Expected |
 |---|---|
-| Generate MoP from sample snapshot | PDF MoP contains all sample-derived required sections. |
+| Generate MoP from sample snapshot | Human MoP content contains all sample-derived required sections and a valid PDF placeholder is written. |
 | Target namespace rewrite | All generated manifests use target namespace. |
 | Secret exclusion | Secrets and secret-like values are excluded or replaced with placeholders. |
 | Helm release section | Helm commands are generated when release data exists. |
 | Raw Kubernetes section | Supported non-Helm resources produce dry-run, apply, validate, and rollback notes. |
 | Unsupported resource exclusion | Unsafe resources appear as manual notes, not executable commands. |
 | Optional store disabled | Agent succeeds with local file only. |
-| Qdrant no-match | Agent skips prior references and still generates PDF MoP plus installation notes. |
+| Qdrant no-match | Agent skips prior references and still generates human MoP artifacts plus installation notes. |
 | Qdrant match | Accepted prior references are cited and do not override contradictory current evidence. |
 | Qdrant unavailable | Warning is recorded and generation continues when local storage succeeds. |
 | Trace disabled | Agent succeeds without Langfuse/SigNoz. |
-| Return content true | API returns Markdown installation notes content and PDF metadata. |
+| Return content true | API returns Markdown installation notes content and artifact metadata. |
 | MCP unavailable fallback | Stored snapshot path returns warning instead of crashing when allowed. |
 | Application mode metadata only | Schema output contains no records, messages, or cache values. |
-| Installation notes generated | `.installation.md` notes contain metadata, phases, dependency graph, validation, rollback, evidence, and unknowns. |
+| Installation notes generated | `.installation.md` notes contain metadata, machine execution plan, phases, dependency graph, validation, rollback, evidence, and unknowns. |
+| Artifact lifecycle | Preview, download, generated-folder archive, single-run delete, and bulk delete stay within the artifact storage root. |
 | Standalone LLM path | LangGraph/LangChain/model gateway path records reasoning trace and handles model failure according to policy. |

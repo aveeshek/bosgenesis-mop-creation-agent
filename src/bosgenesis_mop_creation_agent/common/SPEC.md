@@ -4,16 +4,16 @@
 
 `common/` contains shared utilities that do not own business logic.
 
-## Future modules
+## Current and future modules
 
 - `errors.py`
 - `ids.py`
 - `time.py`
-- `logging.py`
+- `logging.py`: implemented structured logging setup/helper.
 
 ## Responsibilities
 
-- Stable ID generation for `mop_id`, `run_id`, and `correlation_id`.
+- Stable ID generation for `mop_id`, `run_id`, and `correlation_id` when extracted from orchestration.
 - Timestamp helpers.
 - Shared exception types.
 - Structured logging helpers.
@@ -26,4 +26,3 @@ Common utilities must remain dependency-light and must not call upstream MCP ser
 ## Safety
 
 Common logging helpers must default to redacted output.
-

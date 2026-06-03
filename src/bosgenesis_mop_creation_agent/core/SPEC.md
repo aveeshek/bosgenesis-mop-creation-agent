@@ -2,7 +2,8 @@
 
 ## Intent
 
-`core/` coordinates complete MoP generation and refinement runs.
+`core/` coordinates asynchronous MoP generation runs, artifact lookup, and
+local artifact housekeeping.
 
 ## Responsibilities
 
@@ -19,6 +20,9 @@
 - Validate artifacts.
 - Persist local artifacts and optional stores.
 - Return summary and trace identifiers.
+- Keep in-memory run state for `accepted`, `generated`, and `failed` runs.
+- List, preview, download, and archive generated local artifacts.
+- Delete one MoP run or all local MoP artifacts with storage-root guardrails.
 
 ## Run identifiers
 
@@ -42,26 +46,41 @@ Every run must include:
 validate request
 create run context
 start trace
+return accepted response
+continue background generation
 read snapshot
 enrich from MCP
 merge evidence
 classify resources
 lookup qdrant prior references
-reason over install order and unknowns
+reason over install order and unknowns when enabled
 normalize manifests and values
-render sample-format human MoP model
-render human MoP PDF
-render Markdown installation notes
+render sample-format human MoP markdown and PDF placeholder
+render Markdown installation notes and machine execution plan YAML
 validate artifacts
 persist artifacts
-return response
+store generated response
 ```
 
 ## Failure policy
 
-- No inventory data fails unless live MCP-only fallback is explicitly enabled.
+- No inventory data may continue with warnings when governed MCP live fallback or
+  empty artifact generation remains safe.
 - Local storage failure fails the request.
 - Secret or production-data leakage fails artifact publication.
 - Optional store failures continue with warnings.
 - Qdrant disabled, unavailable, or no-match conditions continue with warnings and no prior references.
-- External LLM failure in standalone mode fails unless deterministic-only fallback is explicitly enabled.
+- Optional LLM repair/suggestion failure continues with warnings and deterministic output.
+- Artifact download/archive/delete operations must deny paths outside the local storage root.
+
+## Artifact lifecycle
+
+`core/` owns local artifact path resolution and must:
+
+- resolve all paths under `agent.local_storage_path`;
+- deny path traversal and absolute-path escape;
+- expose capped preview for approved text artifacts;
+- expose non-truncated download for approved text artifacts;
+- create zip archives for approved artifact directories such as `generated/`;
+- delete one run directory by `mop_id`;
+- delete all run directories only when `confirm=true`.

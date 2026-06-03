@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from bosgenesis_mop_creation_agent.classification.models import (
     ClassificationSummary,
     ClassifiedResource,
@@ -94,6 +96,7 @@ class LocalArtifactWriter:
         human_mop_markdown_path = run_dir / f"{file_stem}.human-mop.md"
         human_mop_pdf_path = run_dir / f"{file_stem}.pdf"
         installation_notes_path = run_dir / f"{file_stem}.installation.md"
+        machine_execution_plan_path = run_dir / "machine_execution_plan.yaml"
         artifact_manifest_path = run_dir / "artifact.json"
         reconstruction = build_reconstruction_plan(
             inventory=inventory,
@@ -137,10 +140,12 @@ class LocalArtifactWriter:
             _read_template(INSTALLATION_NOTES_TEMPLATE_PATH),
             context,
         )
+        machine_execution_plan_content = context["machine_execution_plan_yaml"]
         _assert_required_sections(human_mop_content)
 
         human_mop_markdown_path.write_text(human_mop_content, encoding="utf-8")
         installation_notes_path.write_text(installation_notes_content, encoding="utf-8")
+        machine_execution_plan_path.write_text(machine_execution_plan_content, encoding="utf-8")
         _write_placeholder_pdf(human_mop_pdf_path, human_mop_content)
 
         manifest = {
@@ -169,6 +174,12 @@ class LocalArtifactWriter:
             },
             "classification": _classification_manifest(classification),
             "reconstruction": _reconstruction_manifest(reconstruction),
+            "machine_execution_plan": _machine_execution_plan(
+                reconstruction=reconstruction,
+                classification=classification,
+                target_namespace=request.target_namespace,
+                generation_mode=request.mode.value,
+            ),
             "llm_repair_suggestions": repair_suggestions.model_dump(mode="json"),
             "mcp": {
                 "sources_attempted": mcp_sources_attempted or [],
@@ -179,6 +190,7 @@ class LocalArtifactWriter:
                 "human_mop_markdown_path": str(human_mop_markdown_path),
                 "human_mop_pdf_path": str(human_mop_pdf_path),
                 "installation_notes_path": str(installation_notes_path),
+                "machine_execution_plan_path": str(machine_execution_plan_path),
                 "generated_manifests_dir": str(generated_dir),
                 "generated_values_dir": str(values_dir),
                 "evidence_dir": str(evidence_dir),
@@ -334,7 +346,10 @@ class LocalArtifactWriter:
             "generation_status": "generated",
             "qdrant_lookup_status": "not_executed",
             "qdrant_reference_count": "0",
-            "required_human_inputs_yaml": empty_yaml_list,
+            "required_human_inputs_yaml": _required_human_inputs_yaml(
+                reconstruction,
+                classification,
+            ),
             "k8s_mcp_status": _source_status("k8s_inspector_mcp", mcp_sources_attempted),
             "k8s_evidence_references_yaml": _source_refs("k8s_inspector_mcp", mcp_sources_attempted),
             "helm_mcp_status": _source_status("helm_manager_mcp", mcp_sources_attempted),
@@ -416,12 +431,482 @@ class LocalArtifactWriter:
             "confidence_summary_yaml": (
                 "  overall: medium_when_snapshot_found_low_when_missing"
             ),
+            "machine_execution_plan_yaml": _machine_execution_plan_yaml(
+                reconstruction=reconstruction,
+                classification=classification,
+                target_namespace=request.target_namespace,
+                generation_mode=request.mode.value,
+            ),
             "human_mop_pdf_path": str(human_mop_pdf_path),
             "installation_notes_path": str(installation_notes_path),
             "generated_manifests_dir": str(generated_dir),
             "generated_values_dir": str(values_dir),
             "evidence_dir": str(evidence_dir),
         }
+
+
+def _machine_execution_plan_yaml(
+    *,
+    reconstruction: ReconstructionPlan,
+    classification: ClassificationSummary | None,
+    target_namespace: str,
+    generation_mode: str,
+) -> str:
+    return yaml.dump(
+        _machine_execution_plan(
+            reconstruction=reconstruction,
+            classification=classification,
+            target_namespace=target_namespace,
+            generation_mode=generation_mode,
+        ),
+        Dumper=_NoAliasSafeDumper,
+        sort_keys=False,
+        width=120,
+    ).rstrip()
+
+
+def _machine_execution_plan(
+    *,
+    reconstruction: ReconstructionPlan,
+    classification: ClassificationSummary | None,
+    target_namespace: str,
+    generation_mode: str,
+) -> dict[str, Any]:
+    phases = [
+        _phase(
+            phase_id="verify_access",
+            depends_on=[],
+            objective="Confirm artifact bundle, source evidence, and target namespace intent.",
+            steps=[
+                _step(
+                    step_id="verify-artifact-bundle",
+                    phase_id="verify_access",
+                    step_type="context_check",
+                    title="Verify generated artifact bundle",
+                    commands=[
+                        {
+                            "kind": "check",
+                            "command": "test -f artifact.json && test -d generated && test -d values",
+                        }
+                    ],
+                    expected_outcomes=["artifact.json, generated/, and values/ are present."],
+                    evidence_refs=["artifact.json"],
+                    inference_label="observed",
+                    confidence="high",
+                    rationale="The artifact bundle is produced by this agent before execution.",
+                    mutates_target=False,
+                    requires_human_approval=False,
+                )
+            ],
+        ),
+        _phase(
+            phase_id="prepare_target_namespace",
+            depends_on=["verify_access"],
+            objective="Ensure the target namespace exists before namespaced resources are applied.",
+            steps=[
+                _step(
+                    step_id="prepare-target-namespace",
+                    phase_id="prepare_target_namespace",
+                    step_type="namespace",
+                    title=f"Ensure namespace {target_namespace} exists",
+                    commands=[
+                        {
+                            "kind": "check",
+                            "command": f"kubectl get namespace {target_namespace}",
+                        },
+                        {
+                            "kind": "apply",
+                            "command": (
+                                f"kubectl get namespace {target_namespace} || "
+                                f"kubectl create namespace {target_namespace}"
+                            ),
+                        },
+                    ],
+                    expected_outcomes=[f"Namespace {target_namespace} exists."],
+                    evidence_refs=["generation_request.target_namespace"],
+                    inference_label="human_input_required",
+                    confidence="high",
+                    rationale="The target namespace is supplied by the generation request.",
+                    rollback_commands=[
+                        (
+                            f"kubectl delete namespace {target_namespace} "
+                            "# only if created for this change and cleanup is approved"
+                        )
+                    ],
+                    mutates_target=True,
+                    requires_human_approval=True,
+                )
+            ],
+        ),
+        _phase(
+            phase_id="prepare_secret_placeholders",
+            depends_on=["prepare_target_namespace"],
+            objective="Collect approved secret values without copying source Secret data.",
+            steps=_secret_placeholder_steps(classification),
+        ),
+        _phase(
+            phase_id="apply_configmaps",
+            depends_on=["prepare_secret_placeholders"],
+            objective="Apply generated ConfigMap manifests after namespace rewrite.",
+            steps=_raw_plan_steps(
+                reconstruction,
+                phase_id="apply_configmaps",
+                include={"ConfigMap"},
+                depends_on=["prepare_secret_placeholders"],
+            ),
+        ),
+        _phase(
+            phase_id="apply_pvcs",
+            depends_on=["prepare_target_namespace"],
+            objective="Apply approved PersistentVolumeClaim manifests.",
+            steps=_raw_plan_steps(
+                reconstruction,
+                phase_id="apply_pvcs",
+                include={"PersistentVolumeClaim"},
+                depends_on=["prepare_target_namespace"],
+            ),
+        ),
+        _phase(
+            phase_id="install_helm_releases",
+            depends_on=["apply_configmaps", "apply_pvcs", "prepare_secret_placeholders"],
+            objective="Install or upgrade Helm-managed components with redacted values files.",
+            steps=_helm_plan_steps(reconstruction),
+        ),
+        _phase(
+            phase_id="apply_raw_kubernetes_resources",
+            depends_on=["install_helm_releases", "apply_configmaps", "apply_pvcs"],
+            objective="Apply supported non-Helm Kubernetes resources in deterministic order.",
+            steps=_raw_plan_steps(
+                reconstruction,
+                phase_id="apply_raw_kubernetes_resources",
+                exclude={"ConfigMap", "PersistentVolumeClaim", "Ingress"},
+                depends_on=["install_helm_releases", "apply_configmaps", "apply_pvcs"],
+            ),
+        ),
+        _phase(
+            phase_id="apply_ingress",
+            depends_on=["apply_raw_kubernetes_resources"],
+            objective="Apply Ingress resources after backend services are present.",
+            steps=_raw_plan_steps(
+                reconstruction,
+                phase_id="apply_ingress",
+                include={"Ingress"},
+                depends_on=["apply_raw_kubernetes_resources"],
+            ),
+        ),
+        _phase(
+            phase_id="apply_application_metadata",
+            depends_on=["apply_raw_kubernetes_resources"],
+            objective="Application-mode metadata recreation is deferred until application evidence exists.",
+            enabled_when='generation_mode == "application"',
+            steps=[
+                _manual_guidance_step(
+                    step_id="application-metadata-human-review",
+                    phase_id="apply_application_metadata",
+                    title="Review application metadata gaps",
+                    rationale="Phase 8 platform notes do not create database schemas, topics, or cache metadata.",
+                    required_human_inputs=["application_metadata_evidence"],
+                )
+            ]
+            if generation_mode == "application"
+            else [],
+        ),
+        _phase(
+            phase_id="validate",
+            depends_on=["apply_ingress", "apply_application_metadata"],
+            objective="Confirm generated resources are visible and healthy in the target namespace.",
+            steps=_validation_plan_steps(reconstruction),
+        ),
+    ]
+    return {
+        "machine_execution_plan": {
+            "schema_version": "1.0",
+            "authority_order": "observed_evidence > deterministic_normalization > llm_suggestion > human_fill_in",
+            "executor_contract": {
+                "parse_this_block_first": True,
+                "dry_run_before_mutation": True,
+                "human_approval_before_mutation": True,
+                "never_copy_secret_values": True,
+                "target_namespace_only": target_namespace,
+                "llm_suggestions_are_not_authority": True,
+            },
+            "dependency_graph": [
+                {"phase_id": phase["phase_id"], "depends_on": phase["depends_on"]}
+                for phase in phases
+            ],
+            "required_human_inputs": _required_human_inputs(reconstruction, classification),
+            "phases": phases,
+        }
+    }
+
+
+def _phase(
+    *,
+    phase_id: str,
+    depends_on: list[str],
+    objective: str,
+    steps: list[dict[str, Any]],
+    enabled_when: str | None = None,
+) -> dict[str, Any]:
+    phase: dict[str, Any] = {
+        "phase_id": phase_id,
+        "depends_on": depends_on,
+        "objective": objective,
+        "steps": steps,
+    }
+    if enabled_when:
+        phase["enabled_when"] = enabled_when
+    return phase
+
+
+def _step(
+    *,
+    step_id: str,
+    phase_id: str,
+    step_type: str,
+    title: str,
+    commands: list[dict[str, str]],
+    expected_outcomes: list[str],
+    evidence_refs: list[str],
+    inference_label: str,
+    confidence: str,
+    rationale: str,
+    depends_on: list[str] | None = None,
+    qdrant_refs: list[str] | None = None,
+    required_human_inputs: list[str] | None = None,
+    rollback_commands: list[str] | None = None,
+    mutates_target: bool,
+    requires_human_approval: bool,
+) -> dict[str, Any]:
+    return {
+        "step_id": _safe_step_id(step_id),
+        "phase_id": phase_id,
+        "title": title,
+        "type": step_type,
+        "depends_on": depends_on or [],
+        "evidence_refs": evidence_refs,
+        "qdrant_refs": qdrant_refs or [],
+        "inference": {
+            "label": inference_label,
+            "confidence": confidence,
+            "rationale": rationale,
+        },
+        "commands": commands,
+        "expected_outcomes": expected_outcomes,
+        "required_human_inputs": required_human_inputs or [],
+        "rollback_commands": rollback_commands or [],
+        "mutates_target": mutates_target,
+        "requires_human_approval": requires_human_approval,
+        "on_failure": "STOP and resolve the evidence or generated artifact before continuing.",
+    }
+
+
+def _secret_placeholder_steps(classification: ClassificationSummary | None) -> list[dict[str, Any]]:
+    secret_inputs = [
+        f"approved_secret_material_for_{item.resource.name}"
+        for item in (classification.excluded if classification else [])
+        if item.resource.kind == "Secret"
+    ]
+    if not secret_inputs:
+        return [
+            _manual_guidance_step(
+                step_id="secret-values-not-generated",
+                phase_id="prepare_secret_placeholders",
+                title="Confirm no generated Secret values are present",
+                rationale="Secret values are excluded by policy and must not appear in artifacts.",
+                required_human_inputs=[],
+            )
+        ]
+    return [
+        _manual_guidance_step(
+            step_id="collect-approved-secret-material",
+            phase_id="prepare_secret_placeholders",
+            title="Collect approved target Secret material",
+            rationale="Source Secret values are excluded; humans must provide approved target values.",
+            required_human_inputs=secret_inputs,
+        )
+    ]
+
+
+def _manual_guidance_step(
+    *,
+    step_id: str,
+    phase_id: str,
+    title: str,
+    rationale: str,
+    required_human_inputs: list[str],
+) -> dict[str, Any]:
+    return _step(
+        step_id=step_id,
+        phase_id=phase_id,
+        step_type="human_input",
+        title=title,
+        commands=[],
+        expected_outcomes=["Required human inputs are confirmed before execution continues."],
+        evidence_refs=["artifact.json"],
+        inference_label="human_input_required",
+        confidence="high",
+        rationale=rationale,
+        required_human_inputs=required_human_inputs,
+        mutates_target=False,
+        requires_human_approval=False,
+    )
+
+
+def _helm_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str, Any]]:
+    steps = []
+    for index, plan in enumerate(reconstruction.helm_releases, start=1):
+        human_inputs = []
+        if plan.chart_ref.startswith("<"):
+            human_inputs.append(f"public_chart_ref_for_{plan.release_name}")
+        steps.append(
+            _step(
+                step_id=f"helm-{index}-{plan.release_name}",
+                phase_id="install_helm_releases",
+                step_type="helm",
+                title=f"Install Helm release {plan.release_name}",
+                depends_on=["apply_configmaps", "apply_pvcs", "prepare_secret_placeholders"],
+                commands=[
+                    {"kind": "dry_run", "command": plan.dry_run_command},
+                    {"kind": "apply", "command": plan.install_command},
+                    {"kind": "validate", "command": plan.validation_command},
+                ],
+                expected_outcomes=[
+                    f"Helm release {plan.release_name} is deployed in {reconstruction.target_namespace}.",
+                ],
+                evidence_refs=[plan.evidence_ref],
+                inference_label="observed",
+                confidence="medium",
+                rationale="Release was discovered from Helm evidence; values are redacted before use.",
+                required_human_inputs=human_inputs,
+                rollback_commands=[plan.rollback_command],
+                mutates_target=True,
+                requires_human_approval=True,
+            )
+        )
+    return steps
+
+
+def _raw_plan_steps(
+    reconstruction: ReconstructionPlan,
+    *,
+    phase_id: str,
+    include: set[str] | None = None,
+    exclude: set[str] | None = None,
+    depends_on: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    return [
+        _step(
+            step_id=f"{phase_id}-{index}-{plan.kind}-{plan.name}",
+            phase_id=phase_id,
+            step_type=_raw_step_type(plan.kind),
+            title=f"Apply {plan.kind} {plan.name}",
+            depends_on=depends_on or [],
+            commands=[
+                {"kind": "dry_run", "command": plan.dry_run_command},
+                {"kind": "apply", "command": plan.apply_command},
+                {"kind": "validate", "command": plan.validation_command},
+            ],
+            expected_outcomes=[
+                f"{plan.kind} {plan.name} exists in namespace {plan.namespace}.",
+            ],
+            evidence_refs=[plan.evidence_ref],
+            inference_label="observed_or_inferred",
+            confidence="medium",
+            rationale="Manifest was normalized from available namespace evidence.",
+            rollback_commands=[plan.rollback_command],
+            mutates_target=True,
+            requires_human_approval=True,
+        )
+        for index, plan in enumerate(_filtered_raw_plans(reconstruction, include, exclude), start=1)
+    ]
+
+
+def _validation_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str, Any]]:
+    commands = [
+        *reconstruction.validation_commands,
+        *[plan.validation_command for plan in reconstruction.helm_releases],
+        *[plan.validation_command for plan in reconstruction.raw_manifests],
+    ]
+    return [
+        _step(
+            step_id=f"validate-{index}",
+            phase_id="validate",
+            step_type="validation",
+            title=f"Run validation command {index}",
+            commands=[{"kind": "validate", "command": command}],
+            expected_outcomes=["Command succeeds and expected resources are visible."],
+            evidence_refs=["artifact.json"],
+            inference_label="observed_or_inferred",
+            confidence="medium",
+            rationale="Validation confirms generated platform resources.",
+            mutates_target=False,
+            requires_human_approval=False,
+        )
+        for index, command in enumerate(commands, start=1)
+    ]
+
+
+def _raw_step_type(kind: str) -> str:
+    if kind == "ConfigMap":
+        return "configmap"
+    if kind == "PersistentVolumeClaim":
+        return "pvc"
+    if kind == "Ingress":
+        return "ingress"
+    return "kubernetes"
+
+
+def _required_human_inputs_yaml(
+    reconstruction: ReconstructionPlan,
+    classification: ClassificationSummary | None,
+) -> str:
+    inputs = _required_human_inputs(reconstruction, classification)
+    if not inputs:
+        return "  []"
+    return _indent_yaml(inputs, spaces=2)
+
+
+def _required_human_inputs(
+    reconstruction: ReconstructionPlan,
+    classification: ClassificationSummary | None,
+) -> list[dict[str, str]]:
+    inputs: list[dict[str, str]] = []
+    for plan in reconstruction.helm_releases:
+        if plan.chart_ref.startswith("<"):
+            inputs.append(
+                {
+                    "input_id": f"public_chart_ref_for_{plan.release_name}",
+                    "target": f"helm_release/{plan.release_name}",
+                    "reason": "Chart reference was unavailable in observed evidence.",
+                    "blocks_phase": "install_helm_releases",
+                }
+            )
+    for item in (classification.excluded if classification else []):
+        if item.resource.kind == "Secret":
+            inputs.append(
+                {
+                    "input_id": f"approved_secret_material_for_{item.resource.name}",
+                    "target": f"Secret/{item.resource.name}",
+                    "reason": "Secret values are excluded and must be supplied from an approved secure source.",
+                    "blocks_phase": "prepare_secret_placeholders",
+                }
+            )
+    return inputs
+
+
+def _indent_yaml(value: Any, *, spaces: int) -> str:
+    text = yaml.safe_dump(value, sort_keys=False, width=120).rstrip()
+    return "\n".join((" " * spaces) + line if line else line for line in text.splitlines())
+
+
+def _safe_step_id(value: str) -> str:
+    return re.sub(r"[^a-z0-9_.-]+", "-", value.lower()).strip("-") or "step"
+
+
+class _NoAliasSafeDumper(yaml.SafeDumper):
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
 
 
 def render_template(template: str, context: dict[str, Any]) -> str:

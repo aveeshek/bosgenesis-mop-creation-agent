@@ -1,7 +1,7 @@
 # Output Contracts Specification
 
 **Document status:** Initial scaffold  
-**Applies to:** Human MoP PDF, LLM/agent-readable Markdown installation notes, generated manifest/value snippets, metadata responses, and optional retrieval references.
+**Applies to:** Human MoP content, valid PDF placeholder, LLM/agent-readable Markdown installation notes, standalone machine execution YAML, generated manifest/value snippets, metadata responses, artifact lifecycle APIs, and optional retrieval references.
 
 ## 1. Purpose
 
@@ -16,9 +16,9 @@ Outputs must align with the SPEC, HLD, LLD, and algorithm design:
 - generated artifacts must be safe, traceable, reproducible, and free of secret values or production data;
 - inferred content must be labeled with confidence and rationale.
 
-## 2. Primary Human MoP PDF Contract
+## 2. Primary Human MoP Contract
 
-The human-readable MoP is the required primary artifact. It must be delivered as PDF and must follow the approved sample-derived section order:
+The human-readable MoP is the required primary human artifact. It must follow the approved sample-derived section order:
 
 1. Title
 2. Document Header
@@ -34,6 +34,8 @@ The human-readable MoP is the required primary artifact. It must be delivered as
 12. Post-Change Activities
 13. Execution Log
 14. Footer
+
+The current PDF artifact is a valid placeholder to preserve artifact and API contract stability. Production-quality PDF rendering is deferred to the PDF renderer phase and must preserve this section order when implemented.
 
 ## 3. Human MoP Section Requirements
 
@@ -61,6 +63,7 @@ It must include:
 
 - machine-parseable metadata;
 - source namespace, target namespace, generation mode, `run_id`, `correlation_id`, and evidence timestamp;
+- a canonical `machine_execution_plan` YAML block that downstream agents parse before prose sections;
 - execution phases;
 - dependency graph or ordered dependency list;
 - command blocks;
@@ -72,10 +75,23 @@ It must include:
 - unknowns and required human inputs;
 - explicit no-data-copy and no-secret constraints.
 
+The `machine_execution_plan` block must contain:
+
+- `schema_version`;
+- `authority_order`;
+- `executor_contract`;
+- `dependency_graph`;
+- `required_human_inputs`;
+- `phases[]`;
+- `steps[]` under each phase.
+
+Each step must include stable `step_id`, `phase_id`, `type`, `depends_on`, `commands`, `expected_outcomes`, `evidence_refs`, `qdrant_refs`, `inference.label`, `inference.confidence`, `inference.rationale`, `required_human_inputs`, `rollback_commands`, `mutates_target`, and `requires_human_approval`.
+
 The notes filename should use:
 
 ```text
-/data/mops/<file-name>.installation.md
+/data/mops/<mop-id>/installation-notes/<file-name>.installation.md
+/data/mops/<mop-id>/installation-notes/machine_execution_plan.yaml
 ```
 
 ## 5. Command Contract
@@ -113,8 +129,11 @@ If a chart reference, value, resource, or ordering decision is inferred rather t
 Local storage is mandatory. A successful run must produce:
 
 ```text
-/data/mops/<file-name>.pdf
-/data/mops/<file-name>.installation.md
+/data/mops/<mop-id>/artifact.json
+/data/mops/<mop-id>/human-mop/<file-name>.md
+/data/mops/<mop-id>/human-mop/<file-name>.pdf
+/data/mops/<mop-id>/installation-notes/<file-name>.installation.md
+/data/mops/<mop-id>/installation-notes/machine_execution_plan.yaml
 ```
 
 When generated snippets exist, they must be referenced from the MoP and stored under:
@@ -183,7 +202,11 @@ warnings
 created_at
 content, only when return_content is true
 artifacts.human_mop_pdf_path
+artifacts.human_mop_markdown_path
 artifacts.installation_notes_path
+artifacts.machine_execution_plan_path
+artifacts.artifact_manifest_path
+artifacts.run_directory_path
 ```
 
 Optional stores may fail without failing the run, but local storage failure must fail the request.
@@ -204,6 +227,10 @@ Codex review:
 ```text
 GET /mop-creation/{mop_id}/artifacts
 GET /mop-creation/{mop_id}/artifacts/preview?path=<relative-artifact-path>
+GET /mop-creation/{mop_id}/artifacts/download?path=<relative-artifact-path>
+GET /mop-creation/{mop_id}/artifacts/archive?prefix=<relative-artifact-directory>
+DELETE /mop-creation/{mop_id}
+DELETE /mop-creation?confirm=true
 ```
 
 Preview rules:
@@ -214,6 +241,31 @@ Preview rules:
 - response size is capped by configuration;
 - preview can be disabled by configuration;
 - preview must not bypass secret exclusion or redaction controls.
+
+Download rules:
+
+- only files under the selected `mop_id` artifact directory are downloadable;
+- path traversal and absolute paths are denied;
+- only configured artifact extensions are downloadable;
+- response content is not truncated;
+- response must set a safe attachment filename;
+- download must not bypass secret exclusion or redaction controls.
+
+Archive rules:
+
+- only directories under the selected `mop_id` artifact directory are archivable;
+- path traversal and absolute paths are denied;
+- only configured artifact extensions are included in the zip;
+- the zip response must not include files outside the requested relative directory;
+- the intended generated-manifest archive path is `prefix=generated/`.
+
+Housekeeping delete rules:
+
+- single-run delete removes only the selected `mop_id` run directory and related in-memory run metadata;
+- bulk delete requires `confirm=true`;
+- bulk delete removes only directories under the configured local artifact storage root;
+- delete responses must include removed file count, removed directory count, and removed byte count;
+- delete operations must never remove files outside the configured artifact storage root.
 
 ## 9. Phase 6.2 LLM Suggestion Contract
 

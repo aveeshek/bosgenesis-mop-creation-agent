@@ -258,11 +258,13 @@ mcp:
       - Ingress
 ```
 
-Phase 6.1 also adds controlled artifact preview as the optional flow:
+Phase 6.1 also adds controlled artifact preview as the optional inspection flow, plus full artifact download and generated-folder archive retrieval for cases where the caller needs the complete output:
 
 ```text
 GET /mop-creation/{mop_id}/artifacts
 GET /mop-creation/{mop_id}/artifacts/preview?path=generated/<file>.yaml
+GET /mop-creation/{mop_id}/artifacts/download?path=generated/<file>.yaml
+GET /mop-creation/{mop_id}/artifacts/archive?prefix=generated/
 ```
 
 Preview is bounded by configuration:
@@ -279,7 +281,7 @@ features:
       - .yml
 ```
 
-Preview must never read outside the selected `mop_id` artifact directory.
+Preview, download, and archive must never read outside the selected `mop_id` artifact directory. Preview remains size-bounded; download and archive return full allowed artifact content.
 
 ## Success Criteria
 

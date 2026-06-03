@@ -1,5 +1,6 @@
 import json
 import time
+import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -145,11 +146,71 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert preview_response.status_code == 200
     assert preview_response.json()["content"].startswith("{")
 
+    installation_notes_name = Path(payload["artifacts"]["installation_notes_path"]).name
+    download_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/download",
+        params={"path": installation_notes_name},
+    )
+    assert download_response.status_code == 200
+    content_disposition = download_response.headers["content-disposition"]
+    assert content_disposition.startswith("attachment;")
+    assert f'filename="{installation_notes_name}"' in content_disposition
+    assert download_response.headers["content-type"].startswith("text/markdown")
+    assert download_response.content == Path(
+        payload["artifacts"]["installation_notes_path"]
+    ).read_bytes()
+
     traversal_response = client.get(
         f"/mop-creation/{mop_id}/artifacts/preview",
         params={"path": "../settings.yaml"},
     )
     assert traversal_response.status_code == 403
+
+    traversal_download_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/download",
+        params={"path": "../settings.yaml"},
+    )
+    assert traversal_download_response.status_code == 403
+
+    pdf_download_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/download",
+        params={"path": Path(payload["artifacts"]["human_mop_pdf_path"]).name},
+    )
+    assert pdf_download_response.status_code == 403
+
+    generated_dir = Path(payload["artifacts"]["run_directory_path"]) / "generated"
+    generated_file = generated_dir / "synthetic.yaml"
+    generated_file.write_text("kind: ConfigMap\nmetadata:\n  name: synthetic\n", encoding="utf-8")
+    ignored_file = generated_dir / "ignore.bin"
+    ignored_file.write_bytes(b"not an artifact")
+
+    archive_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/archive",
+        params={"prefix": "generated/"},
+    )
+    assert archive_response.status_code == 200
+    assert archive_response.headers["content-type"] == "application/zip"
+    archive_path = Path(payload["artifacts"]["run_directory_path"]) / "generated.zip"
+    assert archive_path.is_file()
+    assert archive_response.content == archive_path.read_bytes()
+    with zipfile.ZipFile(archive_path) as archive:
+        assert "synthetic.yaml" in archive.namelist()
+        assert "ignore.bin" not in archive.namelist()
+
+    traversal_archive_response = client.get(
+        f"/mop-creation/{mop_id}/artifacts/archive",
+        params={"prefix": "../"},
+    )
+    assert traversal_archive_response.status_code == 403
+
+    delete_response = client.delete(f"/mop-creation/{mop_id}")
+    assert delete_response.status_code == 200
+    delete_payload = delete_response.json()
+    assert delete_payload["status"] == "deleted"
+    assert delete_payload["mop_id"] == mop_id
+    assert delete_payload["removed_file_count"] >= 1
+    assert not Path(payload["artifacts"]["run_directory_path"]).exists()
+    assert client.get(f"/mop-creation/{mop_id}").status_code == 404
 
 
 def test_latest_returns_404_before_generation() -> None:
@@ -158,6 +219,32 @@ def test_latest_returns_404_before_generation() -> None:
     response = client.get("/mop-creation/latest")
 
     assert response.status_code == 404
+
+
+def test_delete_all_mop_artifacts_requires_confirmation_and_cleans_storage(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+    first = tmp_path / "mop-one"
+    second = tmp_path / "mop-two"
+    first.mkdir()
+    second.mkdir()
+    (first / "artifact.json").write_text("{}", encoding="utf-8")
+    (second / "machine_execution_plan.yaml").write_text("machine_execution_plan: {}", encoding="utf-8")
+
+    denied = client.delete("/mop-creation", params={"confirm": "false"})
+
+    assert denied.status_code == 403
+    assert first.exists()
+    assert second.exists()
+
+    response = client.delete("/mop-creation", params={"confirm": "true"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "deleted"
+    assert payload["removed_mop_count"] == 2
+    assert payload["removed_file_count"] == 2
+    assert not first.exists()
+    assert not second.exists()
 
 
 def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
@@ -175,6 +262,8 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
         "mop_creation_classification",
         "mop_creation_artifacts",
         "mop_creation_artifact_preview",
+        "mop_creation_delete",
+        "mop_creation_delete_all",
         "mop_creation_effective_config",
     }.issubset(tool_names)
 

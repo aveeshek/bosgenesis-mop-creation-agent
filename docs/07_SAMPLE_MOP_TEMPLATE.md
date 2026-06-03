@@ -2,17 +2,17 @@
 
 **Document status:** Initial scaffold  
 **Source:** `kubernetes-mop-sample.md`  
-**Primary output:** Human-readable PDF MoP
+**Primary output:** Human-readable MoP content and future production PDF MoP
 
 ## 1. Intent
 
-The human-facing MoP must be rendered from the approved sample MoP structure and delivered as a PDF document. The source renderer may use Markdown or an internal document model as an intermediate format, but the delivered human MoP artifact is PDF.
+The human-facing MoP must be rendered from the approved sample MoP structure. The current implementation may use Markdown or an internal document model as the primary human content artifact and writes a valid PDF placeholder for API/artifact compatibility. Production-quality PDF rendering is deferred to the PDF renderer phase and must follow this template when implemented.
 
 The LLM/agent-readable installation notes remain Markdown and are optimized for autonomous execution by another agent.
 
-## 2. Required PDF MoP Structure
+## 2. Required Human MoP Structure
 
-The PDF MoP must follow this section order:
+The human MoP content and future production PDF must follow this section order:
 
 1. Title
 2. Document Header
@@ -78,9 +78,9 @@ The sample deployment sections must be adapted for namespace mirroring:
 - validation checks workloads, services, ingress, Helm release status, PVCs, and application schemas;
 - rollback removes target Helm releases and generated raw resources, with namespace deletion only when explicitly approved.
 
-## 6. PDF Rendering Requirements
+## 6. Future PDF Rendering Requirements
 
-The PDF must preserve:
+When the production PDF renderer is implemented, the PDF must preserve:
 
 - readable heading hierarchy;
 - tables;
@@ -92,5 +92,4 @@ The PDF must preserve:
 - execution log table;
 - footer metadata.
 
-PDF generation must fail if required sections are missing or if secret-like values or production data appear in the rendered content.
-
+Artifact generation must fail if required sections are missing or if secret-like values or production data appear in the rendered content. Production PDF generation must also fail when these validation rules are violated.

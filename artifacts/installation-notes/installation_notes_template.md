@@ -110,7 +110,15 @@ dependency_order:
     depends_on: [apply_ingress, apply_application_metadata]
 ```
 
-## 7. Execution Phases
+## 7. Machine Execution Plan
+
+This block is the canonical machine-readable execution contract. A downstream agent should parse this YAML first, then use the remaining sections as human-readable supporting detail.
+
+```yaml
+{{machine_execution_plan_yaml}}
+```
+
+## 8. Execution Phases
 
 Each command-bearing step inside a phase must use this shape:
 
@@ -300,14 +308,14 @@ evidence_refs:
 {{validation_evidence_refs_yaml}}
 ```
 
-## 8. Go / No-Go Matrix
+## 9. Go / No-Go Matrix
 
 ```yaml
 go_no_go:
 {{go_no_go_yaml}}
 ```
 
-## 9. Rollback Plan
+## 10. Rollback Plan
 
 ```yaml
 rollback:
@@ -323,7 +331,7 @@ rollback:
 {{namespace_cleanup_rollback_yaml}}
 ```
 
-## 10. Inference and Confidence
+## 11. Inference and Confidence
 
 ```yaml
 inferences:
@@ -334,7 +342,7 @@ confidence_summary:
 {{confidence_summary_yaml}}
 ```
 
-## 11. Excluded Resources
+## 12. Excluded Resources
 
 ```yaml
 excluded_resources:
@@ -345,7 +353,7 @@ exclusion_policy:
   - Unsupported namespaced resources require manual review.
 ```
 
-## 12. Artifact References
+## 13. Artifact References
 
 ```yaml
 artifacts:
@@ -356,7 +364,7 @@ artifacts:
   evidence_dir: "{{evidence_dir}}"
 ```
 
-## 13. Final Safety Gate
+## 14. Final Safety Gate
 
 Before execution, confirm:
 

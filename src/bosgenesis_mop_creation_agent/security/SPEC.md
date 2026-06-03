@@ -49,3 +49,13 @@ Credentials for application mode must be read-only, explicit, redacted, and neve
 
 Policy violations fail the run before artifact publication.
 
+## Artifact API policy
+
+Artifact preview, download, archive, and housekeeping delete APIs must:
+
+- resolve requested paths against the configured local artifact storage root;
+- deny path traversal and absolute-path escape;
+- expose only approved artifact extensions for preview/download/archive;
+- never expose Kubernetes Secret values or production data;
+- delete only selected `mop_id` run directories, or all run directories only when
+  explicit bulk confirmation is provided.

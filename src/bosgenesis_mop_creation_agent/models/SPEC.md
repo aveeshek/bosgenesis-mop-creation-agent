@@ -2,12 +2,16 @@
 
 ## Intent
 
-`models/` defines future typed contracts for run requests, evidence bundles, reasoning plans, artifacts, validation results, audit events, and configuration views.
+`models/` defines typed contracts for run requests, API/MCP responses, artifact metadata, trace IDs, and future evidence/reasoning models.
 
 ## Required model families
 
-- `MoPGenerationRequest`.
-- `MoPGenerationResponse`.
+- `MoPGenerationRequest`: implemented.
+- `MoPGenerationResponse`: implemented.
+- `ArtifactMetadata`: implemented.
+- `TraceIds`: implemented.
+- `McpToolDefinition`: implemented.
+- `McpToolResponse`: implemented.
 - `RunContext`.
 - `EvidenceBundle`.
 - `ResourceClassification`.
@@ -16,7 +20,6 @@
 - `GeneratedArtifact`.
 - `ArtifactValidationResult`.
 - `AuditEvent`.
-- `TraceIds`.
 - `EffectiveConfig`.
 
 ## Request fields
@@ -25,7 +28,7 @@
 
 ## Response fields
 
-`MoPGenerationResponse` must include identifiers, namespaces, status, artifact paths, optional content, counts, warnings, trace IDs, and created timestamp.
+`MoPGenerationResponse` must include identifiers, namespaces, status, artifact paths, optional content, inventory/classification counts, warnings, trace IDs, and created timestamp.
 
 ## Artifact models
 
@@ -33,10 +36,13 @@ Artifact models must represent:
 
 - human MoP PDF;
 - Markdown installation notes;
+- standalone machine execution plan YAML;
 - generated manifest snippets;
 - Helm values snippets;
 - evidence appendix;
 - validation report.
+
+Artifact path models must support run directory, `artifact.json`, human MoP markdown, PDF placeholder, installation notes markdown, and future artifact extensions without breaking response compatibility.
 
 ## Design rule
 

@@ -5,9 +5,9 @@
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
 **Target namespace:** Provided at runtime  
-**Primary purpose:** Generate a human-executable Method of Procedure (MoP) PDF and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
+**Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates a safe, line-by-line MoP PDF from the approved sample-derived template. It also creates LLM/agent-readable Markdown installation notes. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template and writes a valid PDF placeholder until production PDF rendering is implemented. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured LLM profile are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
 
@@ -37,10 +37,10 @@ flowchart TD
     Reason --> AppMode
     AppMode -->|"Yes"| AppSchema["Collect schema/topology metadata only"]
     AppMode -->|"No"| Render
-    AppSchema --> Render["Render MoP PDF and installation notes"]
+    AppSchema --> Render["Render human MoP, PDF placeholder, and installation notes"]
 
     Render --> ValidateArtifact["Validate artifact safety and completeness"]
-    ValidateArtifact --> SaveLocal["Save PDF and Markdown artifacts"]
+    ValidateArtifact --> SaveLocal["Save human MoP, PDF placeholder, Markdown, YAML, and generated artifacts"]
     SaveLocal --> OptionalStores["Save optional Mongo/metadata"]
     OptionalStores --> FinishTrace["Finish trace"]
     FinishTrace --> Response["Return response"]
@@ -143,7 +143,8 @@ function generate_mop(request):
         warnings
     )
 
-    mop_pdf = render_mop_pdf(mop_document)
+    human_mop_markdown = render_human_mop_markdown(mop_document)
+    mop_pdf_placeholder = render_mop_pdf_placeholder(mop_document)
 
     installation_notes_markdown = render_installation_notes(
         request,
@@ -158,14 +159,28 @@ function generate_mop(request):
         warnings
     )
 
+    machine_execution_plan_yaml = render_machine_execution_plan_yaml(
+        reconstruction_plan,
+        validation_steps,
+        rollback_steps,
+        excluded,
+        warnings
+    )
+
     validate_no_secret_values(mop_document)
+    validate_no_secret_values(human_mop_markdown)
     validate_no_secret_values(installation_notes_markdown)
+    validate_no_secret_values(machine_execution_plan_yaml)
     validate_sample_mop_sections(mop_document)
     validate_installation_notes_contract(installation_notes_markdown)
+    validate_machine_execution_plan_contract(machine_execution_plan_yaml)
     validate_target_namespace_rewrite(normalized_manifests, target_namespace)
 
-    file_path = write_pdf_file(mop_id, mop_pdf)
+    human_mop_path = write_human_mop_file(mop_id, human_mop_markdown)
+    file_path = write_pdf_placeholder_file(mop_id, mop_pdf_placeholder)
     installation_notes_path = write_installation_notes_file(mop_id, installation_notes_markdown)
+    machine_execution_plan_path = write_machine_execution_plan_file(mop_id, machine_execution_plan_yaml)
+    artifact_manifest_path = write_artifact_manifest(mop_id)
     save optional stores if enabled
 
     finish traces
@@ -423,7 +438,7 @@ function refine_with_langgraph_llm(plan, redacted_evidence, prior_references, me
 
 LLM reasoning must never receive secret values or production data. Every prompt, response, inference, and validation result must be traced in Langfuse and correlated with SigNoz/OpenTelemetry spans.
 
-## 12. MoP PDF and Installation Notes Rendering Algorithm
+## 12. Human MoP and Installation Notes Rendering Algorithm
 
 ```mermaid
 flowchart LR
@@ -439,8 +454,10 @@ flowchart LR
     Rollback["Rollback Procedure"] --> Template
     Post["Post-Change Activities"] --> Template
     Log["Execution Log"] --> Template
-    Template --> PDF["Final PDF MoP"]
+    Template --> Human["Human MoP Markdown"]
+    Template --> PDF["Valid PDF Placeholder"]
     Template --> Notes["Markdown Installation Notes"]
+    Notes --> Plan["Standalone Machine Execution YAML"]
 ```
 
 The renderer must include:
@@ -456,7 +473,9 @@ The renderer must include:
 - evidence appendix;
 - cited Qdrant prior references when used;
 - execution log section for human operators.
-- structured execution phases and dependency graph for the Markdown installation notes.
+- structured execution phases, dependency graph, expected outcomes, inference labels, required human inputs, and machine execution plan for the Markdown installation notes.
+
+The current PDF output is a placeholder artifact for API/artifact contract stability. Production-quality PDF layout is deferred to the PDF renderer phase.
 
 ## 13. Generated Command Ordering
 
@@ -521,13 +540,47 @@ function validate_artifact(mop_markdown, manifests, target_namespace):
     assert excluded resources are not emitted as executable apply commands
     assert unknown chart references are marked
     assert application mode contains metadata only
-    assert PDF MoP contains sample-derived required sections
-    assert installation notes contain structured phases and evidence references
+    assert human MoP content contains sample-derived required sections
+    assert PDF placeholder is present until production PDF renderer is enabled
+    assert installation notes contain machine_execution_plan, structured phases, and evidence references
+    assert standalone machine_execution_plan.yaml exists and contains no YAML aliases
     assert Qdrant references are cited and do not appear as observed current-state facts
     assert all inferred steps are labeled
 ```
 
 Validation failures for redaction, blocked resources, or production data leakage must fail the request before artifact publication.
+
+## 16.1 Artifact Lifecycle Algorithm
+
+```text
+function preview_artifact(mop_id, relative_path):
+    resolve path under configured artifact root and mop_id run directory
+    reject traversal, absolute paths, disallowed extensions, or missing files
+    return bounded preview with truncation metadata
+
+function download_artifact(mop_id, relative_path):
+    resolve path under configured artifact root and mop_id run directory
+    reject traversal, absolute paths, disallowed extensions, or missing files
+    stream full file without truncation
+
+function archive_artifacts(mop_id, prefix):
+    resolve prefix under configured artifact root and mop_id run directory
+    reject traversal or non-directory prefixes
+    create zip from allowed files only
+    return archive stream
+
+function delete_mop(mop_id):
+    remove only the selected mop_id run directory under configured artifact root
+    remove related in-memory run metadata
+    return removed file, directory, and byte counts
+
+function delete_all_mops(confirm):
+    require confirm == true
+    remove only run directories under configured artifact root
+    return removed file, directory, and byte counts
+```
+
+Preview is intentionally bounded for quick inspection. Download and archive endpoints provide full artifact retrieval without requiring shell access to the pod or PVC.
 
 ## 17. Observability Algorithm
 

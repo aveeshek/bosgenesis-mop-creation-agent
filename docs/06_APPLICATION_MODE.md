@@ -18,7 +18,7 @@ Application mode includes:
 - all `platform-only` output;
 - schema/topology discovery where approved evidence is available;
 - metadata-only recreation instructions;
-- metadata-only sections in both the human MoP PDF and the Markdown installation notes;
+- metadata-only sections in both the human MoP artifacts and the Markdown installation notes;
 - validation commands or checks;
 - manual rollback guidance.
 
@@ -91,7 +91,7 @@ Application metadata collection must happen after namespace/platform classificat
 
 ## 7. Output Requirements
 
-The generated human MoP PDF and Markdown installation notes must include application schema/topology recreation guidance when application mode is selected. In the PDF this guidance belongs under `Deployment Execution`, `Validation`, `Go / No-Go`, and `Rollback Procedure` as appropriate; in the Markdown notes it may be a dedicated execution phase.
+The generated human MoP artifacts and Markdown installation notes must include application schema/topology recreation guidance when application mode is selected. In the human MoP content this guidance belongs under `Deployment Execution`, `Validation`, `Go / No-Go`, and `Rollback Procedure` as appropriate; in the Markdown notes it may be a dedicated execution phase and must be represented in the machine execution plan when it is actionable.
 
 That section must include:
 

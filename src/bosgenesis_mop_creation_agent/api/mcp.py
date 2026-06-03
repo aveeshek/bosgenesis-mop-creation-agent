@@ -68,6 +68,26 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
             },
         ),
         McpToolDefinition(
+            name="mop_creation_delete",
+            description="Delete one MoP response and its local artifacts by mop_id.",
+            input_schema={
+                "type": "object",
+                "properties": {"mop_id": {"type": "string"}},
+                "required": ["mop_id"],
+                "additionalProperties": False,
+            },
+        ),
+        McpToolDefinition(
+            name="mop_creation_delete_all",
+            description="Delete all MoP responses and local artifacts. Requires confirm=true.",
+            input_schema={
+                "type": "object",
+                "properties": {"confirm": {"type": "boolean"}},
+                "required": ["confirm"],
+                "additionalProperties": False,
+            },
+        ),
+        McpToolDefinition(
             name="mop_creation_effective_config",
             description="Return redacted effective configuration.",
             input_schema={"type": "object", "properties": {}, "additionalProperties": False},
@@ -117,6 +137,10 @@ def call_mcp_tool(
         if preview is None:
             return {"status": "not_found", "mop_id": arguments["mop_id"]}
         return preview
+    if tool_name == "mop_creation_delete":
+        return orchestrator.delete_mop(str(arguments["mop_id"]))
+    if tool_name == "mop_creation_delete_all":
+        return orchestrator.delete_all_mops(confirm=bool(arguments["confirm"]))
     if tool_name == "mop_creation_effective_config":
         return settings.redacted_dict()
     raise KeyError(tool_name)

@@ -2,11 +2,11 @@
 
 ## Intent
 
-`entrypoints/` defines process startup contracts for the future runtime.
+`entrypoints/` defines process startup contracts for the runtime.
 
 ## Runtime commands
 
-Future runtime commands:
+Runtime command targets:
 
 ```text
 api
@@ -14,9 +14,9 @@ worker
 service
 ```
 
-- `api`: REST and MCP server only.
-- `worker`: standalone reasoning worker only, if asynchronous operation is added.
-- `service`: REST, MCP, and worker orchestration.
+- `api`: REST and MCP server.
+- `worker`: reserved for a future external worker process.
+- `service`: reserved for combined REST, MCP, and external worker orchestration.
 
 ## Required startup behavior
 
@@ -29,8 +29,8 @@ Startup must:
 - initialize optional memory adapters;
 - expose health readiness without requiring upstream dependencies to be healthy;
 - fail fast only for mandatory local runtime requirements.
+- start background generation within the API process for the current async implementation.
 
 ## Runtime mode rule
 
 The agent is on-demand only in v1. It must not start a periodic scheduler unless a later specification explicitly adds one.
-

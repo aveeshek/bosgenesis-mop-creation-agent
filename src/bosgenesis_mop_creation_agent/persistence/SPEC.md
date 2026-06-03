@@ -4,6 +4,12 @@
 
 `persistence/` stores generated artifacts, metadata, and metrics.
 
+## Current implementation note
+
+Local artifact writing is currently implemented in `rendering/artifact_writer.py`.
+This package-level `persistence/` module remains reserved for durable metadata
+stores and future extraction of local storage responsibilities.
+
 ## Future modules
 
 - `local_storage.py`
@@ -16,8 +22,11 @@
 Successful runs must write:
 
 ```text
-/data/mops/<file-name>.pdf
-/data/mops/<file-name>.installation.md
+/data/mops/<mop-id>/artifact.json
+/data/mops/<mop-id>/<file-name>.human-mop.md
+/data/mops/<mop-id>/<file-name>.pdf
+/data/mops/<mop-id>/<file-name>.installation.md
+/data/mops/<mop-id>/machine_execution_plan.yaml
 ```
 
 When snippets exist:
@@ -29,6 +38,24 @@ When snippets exist:
 ```
 
 Local storage failure fails the run.
+
+Artifact APIs may expose:
+
+```text
+/data/mops/<mop-id>/generated.zip
+```
+
+Zip archives are derived artifacts and may be recreated from the run directory.
+
+## Housekeeping
+
+Housekeeping APIs may delete:
+
+- one run directory by `mop_id`;
+- all run directories under the configured local storage root when `confirm=true`.
+
+Delete operations must be path-guarded to the configured local storage root and
+must remove matching in-memory run metadata.
 
 ## Optional stores
 

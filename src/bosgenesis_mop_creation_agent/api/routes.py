@@ -1,7 +1,10 @@
 import json
+import zipfile
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
+from fastapi.responses import FileResponse
 
 from bosgenesis_mop_creation_agent.api.mcp import call_mcp_tool, mcp_creation_tools
 from bosgenesis_mop_creation_agent import __version__
@@ -86,6 +89,24 @@ def get_mop(mop_id: str, request: Request) -> MoPGenerationResponse:
     return response
 
 
+@router.delete("/mop-creation/{mop_id}")
+def delete_mop(mop_id: str, request: Request) -> dict[str, Any]:
+    result = _orchestrator(request).delete_mop(mop_id)
+    if result.get("status") == "denied":
+        raise HTTPException(status_code=403, detail=result)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=result)
+    return result
+
+
+@router.delete("/mop-creation")
+def delete_all_mops(confirm: bool, request: Request) -> dict[str, Any]:
+    result = _orchestrator(request).delete_all_mops(confirm=confirm)
+    if result.get("status") == "denied":
+        raise HTTPException(status_code=403, detail=result)
+    return result
+
+
 @router.get("/mop-creation/{mop_id}/classification")
 def get_mop_classification(mop_id: str, request: Request) -> dict[str, Any]:
     summary = _orchestrator(request).classification(mop_id)
@@ -117,6 +138,69 @@ def preview_mop_artifact(mop_id: str, path: str, request: Request) -> dict[str, 
     if preview.get("status") == "disabled":
         raise HTTPException(status_code=403, detail=preview)
     return preview
+
+
+@router.get("/mop-creation/{mop_id}/artifacts/download")
+def download_mop_artifact(mop_id: str, path: str, request: Request) -> FileResponse:
+    download = _orchestrator(request).artifact_download(mop_id, path)
+    if download is None:
+        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+    if download.get("status") == "denied":
+        raise HTTPException(status_code=403, detail=download)
+    if download.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=download)
+    return FileResponse(
+        path=download["file_path"],
+        filename=download["filename"],
+        media_type=_artifact_media_type(download["filename"]),
+    )
+
+
+@router.get("/mop-creation/{mop_id}/artifacts/archive")
+def archive_mop_artifacts(mop_id: str, prefix: str, request: Request) -> FileResponse:
+    archive = _orchestrator(request).artifact_archive(mop_id, prefix)
+    if archive is None:
+        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+    if archive.get("status") == "denied":
+        raise HTTPException(status_code=403, detail=archive)
+    if archive.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=archive)
+    directory_path = Path(archive["directory_path"])
+    archive_path = Path(archive["archive_path"])
+    _write_artifact_archive(
+        directory_path=directory_path,
+        archive_path=archive_path,
+        allowed_extensions=archive["allowed_extensions"],
+    )
+    return FileResponse(
+        path=str(archive_path),
+        filename=archive["filename"],
+        media_type="application/zip",
+    )
+
+
+def _artifact_media_type(filename: str) -> str:
+    suffix = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if suffix == "md":
+        return "text/markdown; charset=utf-8"
+    if suffix in {"yaml", "yml"}:
+        return "application/yaml; charset=utf-8"
+    if suffix == "json":
+        return "application/json"
+    return "application/octet-stream"
+
+
+def _write_artifact_archive(
+    *,
+    directory_path: Path,
+    archive_path: Path,
+    allowed_extensions: set[str],
+) -> None:
+    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_path in sorted(path for path in directory_path.rglob("*") if path.is_file()):
+            if file_path.suffix.lower() not in allowed_extensions:
+                continue
+            archive.write(file_path, arcname=file_path.relative_to(directory_path).as_posix())
 
 
 @router.get("/mcp/tools")
