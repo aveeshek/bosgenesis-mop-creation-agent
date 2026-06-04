@@ -56,7 +56,7 @@ classify resources
 lookup qdrant prior references
 reason over install order and unknowns when enabled
 normalize manifests and values
-render sample-format human MoP markdown and PDF placeholder
+render sample-format human MoP markdown and paginated PDF
 render Markdown installation notes and machine execution plan YAML
 validate artifacts
 persist artifacts

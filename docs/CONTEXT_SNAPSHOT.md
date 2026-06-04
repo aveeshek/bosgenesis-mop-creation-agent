@@ -38,7 +38,7 @@ Current v1 scope:
 - Phase 6.2: optional LLM repair/suggestion layer, confidence-gated and non-authoritative.
 - Phase 8: machine-readable Markdown installation notes renderer, standalone YAML plan, full artifact download/archive APIs, housekeeping delete APIs, and docs/spec alignment.
 
-Phase 7 production PDF renderer was intentionally skipped/deferred. The current PDF output is a valid placeholder for artifact/API contract stability.
+Phase 7 production PDF rendering is implemented with the native paginated PDF renderer. The PDF is generated from the human MoP markdown, includes page footers, and records renderer metadata in `artifact.json`.
 
 ## Current Output Model
 
@@ -52,7 +52,7 @@ Key artifacts:
 
 - `artifact.json`
 - `human-mop/*.md`
-- `human-mop/*.pdf` placeholder
+- `human-mop/*.pdf`
 - `installation-notes/*.installation.md`
 - `installation-notes/machine_execution_plan.yaml`
 - `generated/*.yaml`
@@ -170,8 +170,8 @@ Recommended next work:
 1. Review the generated Markdown installation notes with another LLM/Codex instance and verify it can explain execution order from `machine_execution_plan`.
 2. Manually dry-run selected generated Helm and raw Kubernetes commands from the notes.
 3. Add stronger artifact lifecycle tests for path traversal and disallowed extension edge cases if not already comprehensive enough.
-4. Decide whether Phase 7 production PDF rendering should be resumed or continue toward application-mode schema metadata.
-5. If resuming Phase 7, implement a production PDF renderer from the sample-derived human MoP model, with layout verification and overflow checks.
+4. Continue improving application-mode schema metadata once platform and PDF artifacts are stable.
+5. Continue human review of generated professional PDFs, especially table density and command readability, after major renderer changes.
 
 ## Operational Notes
 
@@ -191,4 +191,3 @@ GET  /mop-creation/{mop_id}/artifacts/download?path=installation-notes/<file>.in
 GET  /mop-creation/{mop_id}/artifacts/download?path=installation-notes/machine_execution_plan.yaml
 GET  /mop-creation/{mop_id}/artifacts/archive?prefix=generated/
 ```
-

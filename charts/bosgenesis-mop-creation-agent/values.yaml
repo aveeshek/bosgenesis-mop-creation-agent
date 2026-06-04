@@ -109,6 +109,12 @@ config:
         - .md
         - .yaml
         - .yml
+      download_extensions:
+        - .json
+        - .md
+        - .yaml
+        - .yml
+        - .pdf
   inventory:
     postgres:
       enabled: true

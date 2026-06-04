@@ -218,6 +218,8 @@ def _artifact_media_type(filename: str) -> str:
         return "application/yaml; charset=utf-8"
     if suffix == "json":
         return "application/json"
+    if suffix == "pdf":
+        return "application/pdf"
     return "application/octet-stream"
 
 

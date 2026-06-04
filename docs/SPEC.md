@@ -8,7 +8,8 @@ The documentation set must preserve the original product context:
 
 - the agent is non-deterministic by nature and may use an LLM to decide next steps when deterministic evidence is insufficient;
 - v1 scope is one namespace, namespace-only, Kubernetes and Helm based, and public repositories only;
-- the agent produces a sample-format human MoP artifact, a currently valid PDF placeholder, and LLM/agent-readable Markdown installation notes; production-quality PDF rendering is deferred to the PDF renderer phase;
+- the agent produces a sample-format human MoP artifact, a professional paginated PDF rendered from the resolved generation context, and LLM/agent-readable Markdown installation notes;
+- the professional PDF uses the approved 11-section layout, renders execution commands from `machine_execution_plan`, renders validation as human-readable copy-pasteable steps, preserves shell syntax exactly, and groups Appendix A resource snapshots into tables;
 - the Markdown installation notes include a canonical `machine_execution_plan` YAML block, and the same plan is also written as a standalone YAML artifact for downstream agents;
 - generated artifacts are retrievable through governed preview, full-file download, generated-folder archive, and housekeeping delete APIs;
 - the agent may read existing vectorized MoP/installation-note references from Qdrant for matching components during generation;
@@ -32,4 +33,4 @@ The documentation set must preserve the original product context:
 - Sample-derived human MoP template contract.
 - Agent-readable Markdown and machine execution plan contract.
 - Artifact lifecycle, download/archive, and cleanup contract.
-- Deferred production PDF MoP rendering contract.
+- Professional PDF MoP rendering contract.

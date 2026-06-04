@@ -176,7 +176,11 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
         f"/mop-creation/{mop_id}/artifacts/download",
         params={"path": Path(payload["artifacts"]["human_mop_pdf_path"]).name},
     )
-    assert pdf_download_response.status_code == 403
+    assert pdf_download_response.status_code == 200
+    assert pdf_download_response.headers["content-type"] == "application/pdf"
+    assert pdf_download_response.content == Path(
+        payload["artifacts"]["human_mop_pdf_path"]
+    ).read_bytes()
 
     generated_dir = Path(payload["artifacts"]["run_directory_path"]) / "generated"
     generated_file = generated_dir / "synthetic.yaml"

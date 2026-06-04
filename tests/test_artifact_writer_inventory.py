@@ -55,6 +55,10 @@ def test_artifact_writer_includes_snapshot_inventory_counts(tmp_path) -> None:
     assert manifest["inventory"]["snapshot_id"] == "run-123"
     assert manifest["inventory"]["resource_count"] == 2
     assert manifest["inventory"]["helm_release_count"] == 1
+    assert manifest["human_mop_pdf_renderer"]["renderer"] == "phase7_professional_pdf_renderer"
+    assert manifest["human_mop_pdf_renderer"]["template_id"] == "bosgenesis_professional_mop_pdf"
+    assert manifest["human_mop_pdf_renderer"]["page_count"] >= 1
+    assert manifest["human_mop_pdf_renderer"]["overflow_count"] == 0
     assert manifest["mcp"]["sources_attempted"] == ["k8s_inspector_mcp", "helm_manager_mcp"]
     assert "Helm releases | 1" in human_mop
     assert "Raw Kubernetes resources | 2" in human_mop

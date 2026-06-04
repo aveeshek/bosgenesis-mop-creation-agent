@@ -42,7 +42,7 @@ Artifact models must represent:
 - evidence appendix;
 - validation report.
 
-Artifact path models must support run directory, `artifact.json`, human MoP markdown, PDF placeholder, installation notes markdown, and future artifact extensions without breaking response compatibility.
+Artifact path models must support run directory, `artifact.json`, human MoP markdown, PDF, installation notes markdown, and future artifact extensions without breaking response compatibility.
 
 ## Design rule
 

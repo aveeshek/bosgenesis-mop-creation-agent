@@ -2,23 +2,26 @@
 
 ## Intent
 
-`rendering/` converts validated evidence, classification output, and reconstruction plans into sample-format human MoP markdown, a PDF placeholder, Markdown installation notes, a standalone machine execution plan YAML file, and generated snippets.
+`rendering/` converts validated evidence, classification output, and reconstruction plans into sample-format human MoP markdown, a paginated PDF, Markdown installation notes, a standalone machine execution plan YAML file, and generated snippets.
 
 ## Current modules
 
-- `artifact_writer.py`: Local artifact writer that renders snapshot-backed, MCP-enriched, and reconstruction-backed human MoP markdown, PDF placeholder, installation notes markdown, `machine_execution_plan.yaml`, generated manifests, redacted values, and `artifact.json` metadata from the approved artifact templates.
+- `artifact_writer.py`: Local artifact writer that renders snapshot-backed, MCP-enriched, and reconstruction-backed human MoP markdown, professional PDF, installation notes markdown, `machine_execution_plan.yaml`, generated manifests, redacted values, and `artifact.json` metadata from the approved artifact templates.
+- `pdf_renderer.py`: Native professional PDF renderer driven by `artifacts/human-mop/professional_mop_pdf_template.yaml`.
 
 ## Future modules
 
 - `mop_template.py`
 - `mop_renderer.py`
-- `pdf_renderer.py`
 - `installation_notes_renderer.py`
 - `markdown_writer.py`
 
 ## Human MoP output
 
-The current human MoP renderer must produce the approved sample-derived markdown document and a valid PDF placeholder artifact. Production-quality PDF rendering is intentionally deferred while Phase 8 focuses on agent-readable installation notes.
+The current human MoP renderer must produce the approved sample-derived markdown document and a professional, color-styled PDF artifact. The PDF renderer must follow `professional_mop_pdf_template.yaml` and include the cover page, executive summary, namespace analytical summary, document quality analysis, scope/evidence/controls, platform inventory overview, operator execution plan, full ordered execution commands from `machine_execution_plan`, go/no-go and rollback controls, validation/evidence matrix, grouped appendix resource tables, and page footers.
+
+The PDF renderer must not include the removed `Kubernetes Topology View` or
+`Platform Dependency Map` sections in the professional PDF template.
 
 ## Installation notes output
 
@@ -56,6 +59,30 @@ Rendered commands must:
 - include dry-run guidance before real apply/install;
 - label inferred chart references or values;
 - avoid executable steps for excluded resources.
+- preserve shell operators and syntax exactly inside code blocks;
+- never replace shell operators such as `&&`, `||`, or `|` with prose-safe text;
+- render `Actual Execution Steps - Command Pattern` as ordered command-bearing
+  steps from `machine_execution_plan`, not as truncated samples.
+
+## PDF validation rendering
+
+The `Validation and Evidence Matrix` section must:
+
+- show evidence sources in human-readable rows;
+- avoid raw YAML/JSON dumps and internal MCP reference lists;
+- render validation commands as copy-pasteable steps from the `validate` phase
+  of `machine_execution_plan`;
+- include expected outcomes when available.
+
+## PDF layout rules
+
+The renderer must:
+
+- paginate variable-height tables safely;
+- redraw table headers after page breaks;
+- leave stable spacing between tables, labels, and code blocks;
+- report a non-zero overflow diagnostic if content cannot be placed without
+  clipping or overlap.
 
 ## Manifest and values normalization
 

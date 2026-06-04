@@ -7,7 +7,7 @@
 **Target namespace:** Provided at runtime  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template and writes a valid PDF placeholder until production PDF rendering is implemented. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template and writes a production-readable paginated PDF from the rendered human MoP markdown. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured LLM profile are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
 
@@ -37,10 +37,10 @@ flowchart TD
     Reason --> AppMode
     AppMode -->|"Yes"| AppSchema["Collect schema/topology metadata only"]
     AppMode -->|"No"| Render
-    AppSchema --> Render["Render human MoP, PDF placeholder, and installation notes"]
+    AppSchema --> Render["Render human MoP, paginated PDF, and installation notes"]
 
     Render --> ValidateArtifact["Validate artifact safety and completeness"]
-    ValidateArtifact --> SaveLocal["Save human MoP, PDF placeholder, Markdown, YAML, and generated artifacts"]
+    ValidateArtifact --> SaveLocal["Save human MoP, PDF, Markdown, YAML, and generated artifacts"]
     SaveLocal --> OptionalStores["Save optional Mongo/metadata"]
     OptionalStores --> FinishTrace["Finish trace"]
     FinishTrace --> Response["Return response"]
@@ -159,7 +159,7 @@ function generate_mop(request):
     )
 
     human_mop_markdown = render_human_mop_markdown(mop_document)
-    mop_pdf_placeholder = render_mop_pdf_placeholder(mop_document)
+    mop_pdf = render_human_mop_pdf(human_mop_markdown)
 
     installation_notes_markdown = render_installation_notes(
         request,
@@ -192,7 +192,7 @@ function generate_mop(request):
     validate_target_namespace_rewrite(normalized_manifests, target_namespace)
 
     human_mop_path = write_human_mop_file(mop_id, human_mop_markdown)
-    file_path = write_pdf_placeholder_file(mop_id, mop_pdf_placeholder)
+    file_path = write_pdf_file(mop_id, mop_pdf)
     installation_notes_path = write_installation_notes_file(mop_id, installation_notes_markdown)
     machine_execution_plan_path = write_machine_execution_plan_file(mop_id, machine_execution_plan_yaml)
     artifact_manifest_path = write_artifact_manifest(mop_id)
@@ -486,7 +486,7 @@ flowchart LR
     Post["Post-Change Activities"] --> Template
     Log["Execution Log"] --> Template
     Template --> Human["Human MoP Markdown"]
-    Template --> PDF["Valid PDF Placeholder"]
+    Template --> PDF["Professional Paginated PDF"]
     Template --> Notes["Markdown Installation Notes"]
     Notes --> Plan["Standalone Machine Execution YAML"]
 ```
@@ -506,7 +506,7 @@ The renderer must include:
 - execution log section for human operators.
 - structured execution phases, dependency graph, expected outcomes, inference labels, required human inputs, and machine execution plan for the Markdown installation notes.
 
-The current PDF output is a placeholder artifact for API/artifact contract stability. Production-quality PDF layout is deferred to the PDF renderer phase.
+The current PDF output is produced by the Phase 7 professional renderer. It is generated from the approved professional template and resolved generation context, preserves the 11-section order, renders full ordered execution commands from `machine_execution_plan`, preserves shell operators inside command blocks, renders validation as human-readable copy-pasteable steps, renders Appendix A as grouped resource tables, wraps long text/commands, paginates variable-height tables safely, adds footers with page numbers, and records page-count/overflow metadata.
 
 ## 13. Generated Command Ordering
 
@@ -572,7 +572,12 @@ function validate_artifact(mop_markdown, manifests, target_namespace):
     assert unknown chart references are marked
     assert application mode contains metadata only
     assert human MoP content contains sample-derived required sections
-    assert PDF placeholder is present until production PDF renderer is enabled
+    assert paginated PDF is present and renderer metadata reports page count and overflow diagnostics
+    assert professional PDF section order has 11 sections and excludes removed topology/dependency sections
+    assert professional PDF command blocks preserve shell operators
+    assert professional PDF validation section contains human-readable copy-pasteable validation commands
+    assert professional PDF does not dump raw YAML/JSON in the human validation section
+    assert professional PDF grouped Appendix A tables include Helm releases and Kubernetes resource kinds
     assert installation notes contain machine_execution_plan, structured phases, and evidence references
     assert standalone machine_execution_plan.yaml exists and contains no YAML aliases
     assert Qdrant references are cited and do not appear as observed current-state facts

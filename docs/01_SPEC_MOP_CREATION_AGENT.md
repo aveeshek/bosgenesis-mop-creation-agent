@@ -9,7 +9,7 @@
 **Execution posture:** Read-only discovery, evidence-grounded reasoning, document generation  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands.
 
-The agent is not an executor. It creates a safe, line-by-line human MoP artifact using the approved sample MoP format, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes the human MoP content and a valid PDF placeholder; production-quality PDF rendering is deferred to the PDF renderer phase. It also creates LLM/agent-readable Markdown installation notes and a standalone machine execution YAML plan so another agent can autonomously recreate the target environment. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates a safe, line-by-line human MoP artifact using the approved sample MoP format, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes the human MoP content and a production-readable paginated PDF rendered from the same sample-derived template. It also creates LLM/agent-readable Markdown installation notes and a standalone machine execution YAML plan so another agent can autonomously recreate the target environment. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The agent is non-deterministic by design. When deterministic evidence is incomplete, it may use LLM reasoning to infer next steps, dependency order, public repository references, chart/value reconstruction, schema recreation guidance, and unknowns. Inferred content must be labeled and traceable.
 
@@ -36,7 +36,7 @@ The generated human MoP content must allow a human operator to recreate source n
 - Use matching Qdrant references as non-authoritative prior guidance with citations, confidence, and validation against current evidence.
 - Optionally ingest completed, redacted MoP artifacts into Qdrant through an explicit admin API. This ingestion path is separate from generation and requires explicit user confirmation.
 - Use optional Phase 10 bounded LLM reasoning only when deterministic reconstruction has gaps or ambiguity. LLM output is schema-validated, confidence-gated, advisory only, and labeled `llm_suggestion_requires_human_review`.
-- Generate human MoP content in local storage using the approved sample-derived template, plus a valid PDF placeholder until the production PDF renderer phase is implemented.
+- Generate human MoP content in local storage using the approved sample-derived template, plus a paginated PDF artifact for human review.
 - Generate LLM/agent-readable Markdown installation notes in local storage.
 - Generate a canonical `machine_execution_plan` YAML block in the Markdown notes and a standalone `machine_execution_plan.yaml` artifact.
 - Expose governed artifact preview, full-file download, generated-folder zip archive, and housekeeping delete APIs.
@@ -50,7 +50,7 @@ The generated human MoP content must allow a human operator to recreate source n
 - Emit traces to Langfuse and OpenTelemetry/SigNoz when enabled.
 - Use Redis, pgvector, and LangMem as optional memory/cache/retrieval backends.
 - Use agentic memory classes including short-term, episodic, and knowledge memory.
-- Return generated run directory, artifact manifest, human MoP path, PDF placeholder path, Markdown installation notes path, machine plan path, and optionally notes content to caller/Codex.
+- Return generated run directory, artifact manifest, human MoP path, PDF path, Markdown installation notes path, machine plan path, and optionally notes content to caller/Codex.
 - Include Letta adapter interface in the future codebase but keep disabled.
 
 ### Out of scope
@@ -87,10 +87,10 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-8 | Classify resources into Helm-managed, raw Kubernetes, excluded, and warning-only categories. |
 | FR-9 | Sanitize manifests for target namespace recreation. |
 | FR-10 | Exclude or mask blocked/sensitive resources such as Secrets. |
-| FR-11 | Generate human MoP content using the approved sample-derived MoP template and write a valid PDF placeholder until production PDF rendering is implemented. |
+| FR-11 | Generate human MoP content using the approved sample-derived MoP template and write a paginated, production-readable PDF artifact. |
 | FR-12 | Generate LLM/agent-readable Markdown installation notes with structured metadata, execution phases, dependencies, validations, unknowns, and a canonical `machine_execution_plan` YAML block. |
 | FR-13 | Include document header, summary, pre-checks, backup/reference snapshot, execution, validation, rollback, go/no-go, post-change, and execution log sections. |
-| FR-14 | Write human MoP, PDF placeholder, Markdown installation notes, machine plan YAML, generated manifests, values files, evidence, and artifact manifest to local file storage. |
+| FR-14 | Write human MoP, PDF, Markdown installation notes, machine plan YAML, generated manifests, values files, evidence, and artifact manifest to local file storage. |
 | FR-15 | Store MoP and installation notes documents in MongoDB when enabled. |
 | FR-16 | Read Qdrant for existing vectorized MoP/installation-note references for relevant components when enabled, and skip gracefully when no matches exist. |
 | FR-17 | Emit Langfuse trace when enabled. |
@@ -367,7 +367,7 @@ The human MoP content must use the approved sample-derived format:
 13. Execution Log
 14. Footer
 
-The current PDF artifact is a valid placeholder derived from the human MoP model. Production-quality PDF rendering, including layout, tables, execution log formatting, go/no-go sections, and text-overflow checks, is deferred to the PDF renderer phase.
+The current PDF artifact is rendered by the Phase 7 professional PDF renderer using `professional_mop_pdf_template.yaml` and the resolved generation context. The renderer provides a colored cover page, executive summary, namespace analytical summary, document quality analysis, scope/evidence controls, platform inventory overview, operator execution plan, full ordered execution commands from `machine_execution_plan`, go/no-go and rollback controls, a human-readable validation/evidence matrix with copy-pasteable validation commands, and grouped Appendix A resource tables. It preserves shell syntax inside command blocks, wraps text and command blocks, adds page footers, prevents table/code overlap, and records template id/version, page count, section order, and overflow count in `artifact.json`.
 
 The Markdown installation notes must include structured metadata, execution phases, dependency graph, command blocks, expected outcomes, validation checks, rollback hints, evidence references, confidence markers, inference labels, and required human inputs. The Markdown must start from a canonical `machine_execution_plan` YAML block, and the same plan must be available as a standalone YAML artifact with YAML aliases disabled.
 
@@ -391,7 +391,7 @@ The Markdown installation notes must include structured metadata, execution phas
 |---|---|
 | AC-1 | API can generate MoP for source `bosgenesis` and target namespace from request. |
 | AC-2 | MCP tool can trigger MoP generation for Codex. |
-| AC-3 | Human MoP content and valid PDF placeholder are written to local storage. |
+| AC-3 | Human MoP content and a paginated PDF are written to local storage. |
 | AC-4 | If MongoDB is enabled, MoP is stored in MongoDB. |
 | AC-5 | If Qdrant retrieval is enabled, matching prior MoP/installation-note references are cited when available and skipped with a warning when unavailable. |
 | AC-6 | If Langfuse is enabled, trace is visible. |
@@ -399,6 +399,8 @@ The Markdown installation notes must include structured metadata, execution phas
 | AC-8 | MoP includes Helm and raw Kubernetes sections when data exists. |
 | AC-9 | MoP excludes or masks sensitive resources. |
 | AC-10 | MoP contains copyable commands and expected outputs. |
+| AC-10a | Professional PDF command blocks preserve shell operators such as `&&`, `||`, and pipes exactly. |
+| AC-10b | Professional PDF validation content is human-readable and copy-pasteable, not raw YAML or JSON. |
 | AC-11 | Agent does not execute generated commands. |
 | AC-12 | Generated manifests use the target namespace and omit runtime metadata. |
 | AC-13 | Application mode includes only metadata/schema/topology and no production data. |

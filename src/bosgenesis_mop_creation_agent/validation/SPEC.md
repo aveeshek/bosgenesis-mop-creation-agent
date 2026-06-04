@@ -20,6 +20,10 @@
 - Unknowns explicitly listed.
 - Platform-only versus application-mode boundary compliance.
 - Sample-derived human MoP PDF section completeness.
+- Professional PDF section order matches the 11-section template and excludes removed topology/dependency sections.
+- Professional PDF validation content is human-readable and does not expose raw YAML/JSON dumps in the human validation section.
+- Professional PDF command blocks preserve shell operators and copy-pasteable syntax.
+- Professional PDF tables and code blocks do not overlap and renderer overflow diagnostics remain zero for successful publication.
 - Markdown installation notes contract completeness.
 - Machine execution plan YAML contract completeness.
 - No YAML aliases/anchors in machine-readable plan output.

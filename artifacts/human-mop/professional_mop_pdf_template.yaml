@@ -1,0 +1,65 @@
+template_id: bosgenesis_professional_mop_pdf
+template_version: "1.1"
+page:
+  size: letter
+  margin_left: 44
+  margin_right: 44
+  margin_top: 48
+  margin_bottom: 48
+theme:
+  primary: "0.05 0.18 0.32"
+  secondary: "0.00 0.43 0.62"
+  accent: "0.00 0.63 0.72"
+  success: "0.00 0.48 0.33"
+  warning: "0.95 0.55 0.12"
+  danger: "0.72 0.12 0.18"
+  light: "0.94 0.97 0.98"
+  panel: "0.98 0.99 1.00"
+  border: "0.76 0.84 0.88"
+  text: "0.10 0.14 0.18"
+  muted: "0.39 0.45 0.50"
+sections:
+  - id: cover
+    number: 1
+    title: Title and Cover Page
+    renderer: cover
+  - id: executive_summary
+    number: 2
+    title: Executive Summary
+    renderer: executive_summary
+  - id: namespace_analytical_summary
+    number: 3
+    title: Namespace Analytical Summary
+    renderer: analytical_summary
+  - id: document_quality_analysis
+    number: 4
+    title: Document Quality Analysis
+    renderer: document_quality
+  - id: scope_source_evidence_controls
+    number: 5
+    title: Scope, Source Evidence, and Controls
+    renderer: scope_controls
+  - id: recreated_platform_inventory
+    number: 6
+    title: Recreated Platform Inventory
+    renderer: platform_inventory
+  - id: execution_plan_operator_view
+    number: 7
+    title: Execution Plan - Operator View
+    renderer: operator_plan
+  - id: actual_execution_steps_command_pattern
+    number: 8
+    title: Actual Execution Steps - Command Pattern
+    renderer: command_patterns
+  - id: go_no_go_rollback_controls
+    number: 9
+    title: Go / No-Go and Rollback Controls
+    renderer: controls
+  - id: validation_evidence_matrix
+    number: 10
+    title: Validation and Evidence Matrix
+    renderer: validation_matrix
+  - id: appendix_resource_list_snapshot
+    number: 11
+    title: Appendix A - Resource List Snapshot
+    renderer: appendix_resources

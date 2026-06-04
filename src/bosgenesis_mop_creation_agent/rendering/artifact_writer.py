@@ -24,6 +24,7 @@ from bosgenesis_mop_creation_agent.reconstruction.models import (
     ReconstructionPlan,
 )
 from bosgenesis_mop_creation_agent.reconstruction.planner import build_reconstruction_plan
+from bosgenesis_mop_creation_agent.rendering.pdf_renderer import render_human_mop_pdf
 from bosgenesis_mop_creation_agent.retrieval.models import ReferenceLookupResult
 from bosgenesis_mop_creation_agent.sources.snapshot_models import NormalizedInventory
 
@@ -166,7 +167,11 @@ class LocalArtifactWriter:
         human_mop_markdown_path.write_text(human_mop_content, encoding="utf-8")
         installation_notes_path.write_text(installation_notes_content, encoding="utf-8")
         machine_execution_plan_path.write_text(machine_execution_plan_content, encoding="utf-8")
-        _write_placeholder_pdf(human_mop_pdf_path, human_mop_content)
+        pdf_result = render_human_mop_pdf(
+            human_mop_content,
+            human_mop_pdf_path,
+            context=context,
+        )
 
         manifest = {
             "artifact_type": "phase6_reconstruction_mop_artifact",
@@ -196,6 +201,7 @@ class LocalArtifactWriter:
             "reconstruction": _reconstruction_manifest(reconstruction),
             "qdrant_prior_references": reference_result.model_dump(mode="json"),
             "bounded_llm_reasoning": bounded_reasoning.model_dump(mode="json"),
+            "human_mop_pdf_renderer": pdf_result.metadata.model_dump(),
             "machine_execution_plan": _machine_execution_plan(
                 reconstruction=reconstruction,
                 classification=classification,
@@ -387,6 +393,10 @@ class LocalArtifactWriter:
             "qdrant_references_yaml": _qdrant_references_yaml(qdrant_references),
             "helm_releases_yaml": _helm_inventory_yaml(inventory),
             "raw_kubernetes_resources_yaml": _resource_inventory_yaml(inventory, classification),
+            "professional_resource_snapshot": _professional_resource_snapshot(
+                inventory,
+                classification,
+            ),
             "application_targets_yaml": empty_yaml_list,
             "excluded_resources_yaml": _excluded_resources_yaml(classification),
             "warnings_yaml": warning_yaml,
@@ -1603,6 +1613,73 @@ def _resource_inventory_yaml(
     )
 
 
+def _professional_resource_snapshot(
+    inventory: NormalizedInventory | None,
+    classification: ClassificationSummary | None,
+) -> dict[str, Any]:
+    category_by_key: dict[tuple[str, str, str], tuple[str, str]] = {}
+    excluded_resources: list[dict[str, str]] = []
+    if classification:
+        for item in classification.resources:
+            key = _resource_key(item.resource.kind, item.resource.namespace, item.resource.name)
+            category_by_key[key] = (item.category.value, item.reason)
+            if item.category.value == "excluded":
+                excluded_resources.append(
+                    {
+                        "kind": item.resource.kind,
+                        "name": item.resource.name,
+                        "namespace": item.resource.namespace,
+                        "reason": item.reason,
+                    }
+                )
+
+    helm_releases: list[dict[str, str]] = []
+    resources_by_kind: dict[str, list[dict[str, str]]] = {}
+    if inventory:
+        helm_releases = [
+            {
+                "release_name": release.release_name,
+                "namespace": release.namespace,
+                "chart_name": release.chart_name or "",
+                "chart_version": release.chart_version or "",
+                "app_version": release.app_version or "",
+                "revision": str(release.revision or ""),
+                "status": release.status or "",
+            }
+            for release in sorted(inventory.helm_releases, key=lambda item: item.release_name)
+        ]
+        for resource in sorted(inventory.resources, key=lambda item: (item.kind, item.name)):
+            category, reason = category_by_key.get(
+                _resource_key(resource.kind, resource.namespace, resource.name),
+                ("unclassified", ""),
+            )
+            resources_by_kind.setdefault(resource.kind, []).append(
+                {
+                    "kind": resource.kind,
+                    "name": resource.name,
+                    "namespace": resource.namespace,
+                    "api_version": resource.api_version or "",
+                    "status": resource.status_summary or "",
+                    "source": resource.source,
+                    "category": category,
+                    "reason": reason,
+                }
+            )
+
+    return {
+        "helm_releases": helm_releases,
+        "resources_by_kind": resources_by_kind,
+        "excluded_resources": sorted(
+            excluded_resources,
+            key=lambda item: (item["kind"], item["name"]),
+        ),
+    }
+
+
+def _resource_key(kind: str, namespace: str, name: str) -> tuple[str, str, str]:
+    return (kind.lower(), namespace, name)
+
+
 def _excluded_resources_yaml(classification: ClassificationSummary | None) -> str:
     if not classification or not classification.excluded:
         return "  []"
@@ -1736,62 +1813,3 @@ def _assert_required_sections(content: str) -> None:
     missing = [section for section in REQUIRED_HUMAN_MOP_SECTIONS if section not in content]
     if missing:
         raise ValueError(f"Human MoP template is missing required sections: {', '.join(missing)}")
-
-
-def _write_placeholder_pdf(path: Path, markdown_content: str) -> None:
-    headings = [
-        line.lstrip("# ").strip()
-        for line in markdown_content.splitlines()
-        if line.startswith("#") and line.strip("# ").strip()
-    ]
-    lines = ["BOS Genesis MoP Creation Agent", "Phase 6 PDF Placeholder", *headings[:30]]
-    content_stream = _pdf_text_stream(lines)
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        f"<< /Length {len(content_stream)} >>\nstream\n".encode("ascii")
-        + content_stream
-        + b"\nendstream",
-    ]
-
-    output = bytearray(b"%PDF-1.4\n")
-    offsets = [0]
-    for index, obj in enumerate(objects, start=1):
-        offsets.append(len(output))
-        output.extend(f"{index} 0 obj\n".encode("ascii"))
-        output.extend(obj)
-        output.extend(b"\nendobj\n")
-    xref_offset = len(output)
-    output.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-    output.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-    output.extend(
-        (
-            "trailer\n"
-            f"<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            "startxref\n"
-            f"{xref_offset}\n"
-            "%%EOF\n"
-        ).encode("ascii")
-    )
-    path.write_bytes(bytes(output))
-
-
-def _pdf_text_stream(lines: list[str]) -> bytes:
-    escaped_lines = [_escape_pdf_text(line[:90]) for line in lines]
-    commands = ["BT", "/F1 12 Tf", "72 740 Td"]
-    for index, line in enumerate(escaped_lines):
-        if index:
-            commands.append("0 -18 Td")
-        commands.append(f"({line}) Tj")
-    commands.append("ET")
-    return "\n".join(commands).encode("ascii")
-
-
-def _escape_pdf_text(value: str) -> str:
-    ascii_value = value.encode("ascii", errors="ignore").decode("ascii")
-    return ascii_value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

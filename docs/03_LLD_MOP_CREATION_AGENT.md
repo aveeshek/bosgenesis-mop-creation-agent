@@ -7,7 +7,7 @@
 **Target namespace:** Provided at runtime  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived MoP template. The current implementation writes a valid PDF placeholder; production-quality PDF rendering is deferred. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived MoP template. The current implementation writes a production-readable paginated PDF from the same rendered human MoP markdown. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed short-term, episodic, and knowledge memory.
 
@@ -134,7 +134,7 @@ bosgenesis-mop-creation-agent/
 | `reconstruction/command_builder.py` | Builds copyable Helm and Kubernetes dry-run, apply/install, validation, and rollback commands. |
 | `reconstruction/planner.py` | Writes generated manifests/values and returns a platform reconstruction plan for rendering. |
 | `rendering/mop_renderer.py` | Builds the sample-derived human MoP document model. |
-| `rendering/pdf_renderer.py` | Produces the current valid PDF placeholder; production-quality PDF rendering is deferred to a later phase. |
+| `rendering/pdf_renderer.py` | Produces the Phase 7 professional PDF from the resolved generation context with pagination, headings, variable-height tables, command blocks that preserve shell syntax, human-readable validation steps, grouped resource appendix tables, page footers, section-order metadata, and overflow diagnostics. |
 | `rendering/installation_notes_renderer.py` | Generates LLM/agent-readable Markdown installation notes with canonical `machine_execution_plan` YAML. |
 | `persistence/local_storage.py` | Writes Markdown and generated snippets to PVC/local path. |
 | `persistence/mongodb_store.py` | Stores full MoP document and generation trace when enabled. |
@@ -272,7 +272,7 @@ sequenceDiagram
     Q-->>O: cited references or no-match warning
     O->>L: infer ambiguous install order, public repo/chart hints, and unknowns using current evidence plus validated prior references when needed
     O->>N: sanitize and rewrite manifests
-    O->>R: render human MoP, PDF placeholder, installation notes, and machine plan YAML
+    O->>R: render human MoP, paginated PDF, installation notes, and machine plan YAML
     O->>P: save local + optional stores
     O->>T: finish trace
     O-->>API: response
@@ -525,7 +525,7 @@ Each event must carry `run_id`, `correlation_id`, source namespace, target names
 
 | Test | Expected |
 |---|---|
-| Generate MoP from sample snapshot | Human MoP content contains all sample-derived required sections and a valid PDF placeholder is written. |
+| Generate MoP from sample snapshot | Human MoP content contains all sample-derived required sections and a paginated PDF is written. |
 | Target namespace rewrite | All generated manifests use target namespace. |
 | Secret exclusion | Secrets and secret-like values are excluded or replaced with placeholders. |
 | Helm release section | Helm commands are generated when release data exists. |

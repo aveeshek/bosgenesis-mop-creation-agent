@@ -105,8 +105,8 @@ DELETE /mop-creation?confirm=true
 ```
 
 `preview` returns capped inline text for quick inspection. `download` returns the
-full artifact file for approved text artifact extensions and must deny path
-traversal, absolute paths, and unsupported extensions. `archive` returns a zip
+full artifact file for approved download extensions, including generated PDFs,
+and must deny path traversal, absolute paths, and unsupported extensions. `archive` returns a zip
 for an approved artifact directory such as `generated/`, includes only approved
 artifact extensions, and must deny path traversal.
 
@@ -124,7 +124,7 @@ storage.
 - Health/config responses must redact secrets.
 - API code must never call Kubernetes, Helm, databases, caches, or streams directly for evidence; it delegates to orchestration.
 - Artifact preview is capped for quick inspection.
-- Artifact download returns complete approved text artifacts.
+- Artifact download returns complete approved artifacts, including `.pdf` MoP files.
 - Artifact archive returns a zip for approved directories such as `generated/`.
 - Housekeeping deletes remove only configured local artifact storage and in-memory run metadata.
 - Qdrant ingestion is a separate admin operation, requires explicit user confirmation, and must not run as part of generation.

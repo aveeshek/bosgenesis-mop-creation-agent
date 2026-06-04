@@ -363,7 +363,7 @@ class MoPCreationOrchestrator:
                 "path": relative_path,
                 "error": "path_outside_artifact_directory",
             }
-        if target.suffix.lower() not in self._settings.features.artifact_preview.allowed_extensions:
+        if target.suffix.lower() not in self._settings.features.artifact_preview.download_extensions:
             return {
                 "status": "denied",
                 "mop_id": mop_id,

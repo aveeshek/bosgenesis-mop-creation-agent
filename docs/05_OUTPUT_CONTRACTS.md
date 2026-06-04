@@ -1,7 +1,7 @@
 # Output Contracts Specification
 
 **Document status:** Initial scaffold  
-**Applies to:** Human MoP content, valid PDF placeholder, LLM/agent-readable Markdown installation notes, standalone machine execution YAML, generated manifest/value snippets, metadata responses, artifact lifecycle APIs, and optional retrieval references.
+**Applies to:** Human MoP content, paginated PDF output, LLM/agent-readable Markdown installation notes, standalone machine execution YAML, generated manifest/value snippets, metadata responses, artifact lifecycle APIs, and optional retrieval references.
 
 ## 1. Purpose
 
@@ -18,24 +18,23 @@ Outputs must align with the SPEC, HLD, LLD, and algorithm design:
 
 ## 2. Primary Human MoP Contract
 
-The human-readable MoP is the required primary human artifact. It must follow the approved sample-derived section order:
+The human-readable PDF MoP is the required primary review artifact. It must follow the approved professional section order:
 
-1. Title
-2. Document Header
-3. Change Summary
-4. Pre-change Checklist
-5. Access & Environment Verification
-6. Pre-change Backup
-7. Stakeholder Notification
-8. Deployment Execution
-9. Validation
-10. Go / No-Go Decision Points
-11. Rollback Procedure
-12. Post-Change Activities
-13. Execution Log
-14. Footer
+1. Title and Cover Page
+2. Executive Summary
+3. Namespace Analytical Summary
+4. Document Quality Analysis
+5. Scope, Source Evidence, and Controls
+6. Recreated Platform Inventory
+7. Execution Plan - Operator View
+8. Actual Execution Steps - Command Pattern
+9. Go / No-Go and Rollback Controls
+10. Validation and Evidence Matrix
+11. Appendix A - Resource List Snapshot
 
-The current PDF artifact is a valid placeholder to preserve artifact and API contract stability. Production-quality PDF rendering is deferred to the PDF renderer phase and must preserve this section order when implemented.
+The current PDF artifact is rendered from the professional PDF YAML template and generation context. It must preserve this section order, use the configured color theme, keep the full ordered execution commands readable, include controls/evidence views, render validation as human-readable copy-pasteable steps, render Appendix A as grouped resource tables, preserve shell command syntax exactly, and record renderer metadata in `artifact.json`.
+
+The professional PDF must not include the removed `Kubernetes Topology View` or `Platform Dependency Map` sections.
 
 ## 3. Human MoP Section Requirements
 
@@ -49,6 +48,8 @@ The current PDF artifact is a valid placeholder to preserve artifact and API con
 | Stakeholder Notification | Placeholder notification text for start, rollback, and completion messages. |
 | Deployment Execution | Target namespace preparation, secret placeholders, Helm releases, raw Kubernetes resources, ingress, and application schema steps when selected. |
 | Validation Steps | Pod, deployment, service, ingress, Helm, PVC, and application-mode validation checks as applicable. |
+| Validation and Evidence Matrix | Human-readable evidence source rows plus ordered copy-pasteable validation commands from the `validate` phase of `machine_execution_plan`; raw YAML/JSON dumps and internal MCP reference lists are not allowed in this human section. |
+| Appendix A - Resource List Snapshot | Grouped tables for Helm releases and Kubernetes resource kinds, including deployments, statefulsets, daemonsets, services, ingresses, configmaps, PVCs, jobs, cronjobs, pods, warning-only items, and excluded resources when present. |
 | Go/No-Go Decision Points | Explicit stop/continue checkpoints and failed-action guidance. |
 | Rollback Procedure | Helm uninstall, raw manifest delete, and cautious application-mode cleanup guidance. |
 | Post-change Activities | Documentation, trace/artifact retention, and handoff notes. |
@@ -96,7 +97,7 @@ The notes filename should use:
 
 ## 5. Command Contract
 
-All executable commands in the MoP must be copyable and namespace-explicit.
+All executable commands in the MoP must be copyable and namespace-explicit. Human PDF command blocks must preserve shell syntax exactly, including `&&`, `||`, pipes, quotes, multiline continuations, and target namespace arguments.
 
 Helm command pattern:
 

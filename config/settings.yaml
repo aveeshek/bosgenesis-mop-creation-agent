@@ -46,6 +46,22 @@ observability:
   signoz_enabled: true
   otlp_endpoint: http://signoz-otel-collector.signoz:4317
 
+features:
+  artifact_preview:
+    enabled: true
+    max_bytes: 262144
+    allowed_extensions:
+      - .json
+      - .md
+      - .yaml
+      - .yml
+    download_extensions:
+      - .json
+      - .md
+      - .yaml
+      - .yml
+      - .pdf
+
 llm:
   standalone_enabled: true
   framework: langgraph-langchain

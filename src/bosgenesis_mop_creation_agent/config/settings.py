@@ -64,6 +64,9 @@ class ArtifactPreviewSettings(BaseModel):
     allowed_extensions: list[str] = Field(
         default_factory=lambda: [".json", ".md", ".yaml", ".yml"]
     )
+    download_extensions: list[str] = Field(
+        default_factory=lambda: [".json", ".md", ".yaml", ".yml", ".pdf"]
+    )
 
 
 class FeatureSettings(BaseModel):
