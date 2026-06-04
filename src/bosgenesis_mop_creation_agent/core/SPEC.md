@@ -9,6 +9,9 @@ local artifact housekeeping.
 
 - Create run context.
 - Validate source namespace, target namespace, generation mode, and v1 scope.
+- Maintain active runtime source namespace initialized from config.
+- Support runtime source namespace switching for future requests that do not
+  explicitly override `source_namespace`.
 - Read latest snapshot evidence.
 - Enrich with Kubernetes and Helm MCP evidence when enabled.
 - Merge evidence.
@@ -21,6 +24,7 @@ local artifact housekeeping.
 - Persist local artifacts and optional stores.
 - Return summary and trace identifiers.
 - Keep in-memory run state for `accepted`, `generated`, and `failed` runs.
+- Keep runtime namespace state and namespace-derived memory/session context key.
 - List, preview, download, and archive generated local artifacts.
 - Delete one MoP run or all local MoP artifacts with storage-root guardrails.
 - Optionally ingest completed redacted MoP artifacts into Qdrant through a config-gated admin flow. This must never be invoked by generation.
@@ -34,6 +38,7 @@ Every run must include:
 - `correlation_id`;
 - source namespace;
 - target namespace;
+- namespace-derived `session_context_key`;
 - generation mode;
 - caller;
 - trigger type;
@@ -62,6 +67,12 @@ validate artifacts
 persist artifacts
 store generated response
 ```
+
+The default source namespace comes from `agent.source_namespace`. When the
+runtime active namespace is switched, future requests without explicit
+`source_namespace` must use that active namespace. Requests that include
+`source_namespace` are per-run overrides and must not mutate the runtime active
+namespace.
 
 Optional Qdrant ingestion sequence:
 

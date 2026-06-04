@@ -1,6 +1,7 @@
 from enum import StrEnum
+import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class GenerationMode(StrEnum):
@@ -32,6 +33,21 @@ class MoPGenerationRequest(BaseModel):
     return_content: bool = False
     caller: str = "api"
     correlation_id: str | None = None
+
+
+class NamespaceSwitchRequest(BaseModel):
+    namespace: str
+    caller: str = "api"
+
+    @field_validator("namespace")
+    @classmethod
+    def validate_namespace(cls, value: str) -> str:
+        namespace = value.strip()
+        if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", namespace):
+            raise ValueError("namespace must be a Kubernetes RFC1123 label")
+        if len(namespace) > 63:
+            raise ValueError("namespace must be 63 characters or fewer")
+        return namespace
 
 
 class QdrantIngestMoPRequest(BaseModel):

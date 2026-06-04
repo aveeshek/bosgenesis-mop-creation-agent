@@ -7,7 +7,9 @@
 ## Required model families
 
 - `MoPGenerationRequest`: implemented.
+- `NamespaceSwitchRequest`: implemented.
 - `MoPGenerationResponse`: implemented.
+- `NamespaceStateResponse`: implemented.
 - `ArtifactMetadata`: implemented.
 - `TraceIds`: implemented.
 - `McpToolDefinition`: implemented.
@@ -26,9 +28,16 @@
 
 `MoPGenerationRequest` must include source namespace, target namespace, snapshot selector, mode, include flags, requested artifacts, caller, and optional correlation ID.
 
+`NamespaceSwitchRequest` must include namespace and caller. Namespace values
+must be valid Kubernetes RFC1123 labels.
+
 ## Response fields
 
 `MoPGenerationResponse` must include identifiers, namespaces, status, artifact paths, optional content, inventory/classification counts, warnings, trace IDs, and created timestamp.
+
+Namespace-aware responses must expose `session_context_key` so downstream
+memory, LangGraph/LangChain flows, and Codex can bind run context to the active
+source namespace.
 
 ## Artifact models
 

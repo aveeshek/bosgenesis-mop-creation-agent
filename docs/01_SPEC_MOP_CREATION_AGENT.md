@@ -5,6 +5,7 @@
 **Python package:** `bosgenesis_mop_creation_agent`  
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
+**Runtime source namespace:** Config default unless switched through REST/MCP namespace APIs  
 **Target namespace:** Provided at runtime  
 **Execution posture:** Read-only discovery, evidence-grounded reasoning, document generation  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands.
@@ -25,6 +26,8 @@ The generated human MoP content must allow a human operator to recreate source n
 
 - Read latest source namespace snapshot from PostgreSQL and/or ClickHouse.
 - Source namespace defaults to `bosgenesis` from configuration.
+- Active source namespace can be switched at runtime through small governed APIs.
+- Active source namespace is the primary key for agentic memory and session context.
 - Target namespace is supplied at runtime.
 - One namespace only and namespace-only scope for v1.
 - Kubernetes and Helm based reconstruction.
@@ -80,7 +83,9 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-1 | Provide an on-demand API endpoint to generate MoP. |
 | FR-2 | Provide MCP tools for Codex-driven generation, retrieval, artifact inspection, artifact cleanup, configuration inspection, and health. |
 | FR-3 | Accept target namespace at runtime. |
-| FR-4 | Read latest ETL snapshot for configured source namespace. |
+| FR-3a | Provide APIs to get and switch the active source namespace at runtime. |
+| FR-3b | Use `namespace:<active_source_namespace>` as the memory primary key and session context key. |
+| FR-4 | Read latest ETL snapshot for active source namespace, unless a generation request provides an explicit per-run source namespace override. |
 | FR-5 | Support PostgreSQL and ClickHouse as inventory sources. |
 | FR-6 | Optionally call Kubernetes Inspector MCP to validate latest live resources. |
 | FR-7 | Optionally call Helm Manager MCP to enrich Helm-managed releases. |
@@ -185,6 +190,7 @@ Response:
   "correlation_id": "correlation-uuid",
   "source_namespace": "bosgenesis",
   "target_namespace": "bosgenesis-copy-dev",
+  "session_context_key": "namespace:bosgenesis",
   "local_file_path": "",
   "mongo_saved": false,
   "qdrant_reference_count": 0,
@@ -209,6 +215,7 @@ Polling response after completion:
   "correlation_id": "correlation-uuid",
   "source_namespace": "bosgenesis",
   "target_namespace": "bosgenesis-copy-dev",
+  "session_context_key": "namespace:bosgenesis",
   "local_file_path": "/data/mops/<mop-id>/mop-bosgenesis-to-bosgenesis-copy-dev-20260522.pdf",
   "mongo_saved": true,
   "qdrant_reference_count": 3,
@@ -247,10 +254,25 @@ Polling response after completion:
 
 ## 8. MCP Tool Contract
 
+Namespace context APIs:
+
+```text
+GET /namespace
+PUT /namespace
+```
+
+`GET /namespace` returns configured namespace, active runtime namespace,
+`session_context_key`, and `memory_primary_key`. `PUT /namespace` switches the
+active runtime source namespace for future generation requests that do not
+explicitly set `source_namespace`. Namespace values must be valid Kubernetes
+RFC1123 labels.
+
 Initial MCP tools:
 
 ```text
 mop_creation_health
+mop_creation_get_namespace
+mop_creation_set_namespace
 mop_creation_generate
 mop_creation_get
 mop_creation_latest

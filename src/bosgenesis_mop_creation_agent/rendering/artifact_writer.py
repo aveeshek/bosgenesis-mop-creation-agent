@@ -181,6 +181,8 @@ class LocalArtifactWriter:
             "correlation_id": correlation_id,
             "source_namespace": source_namespace,
             "target_namespace": request.target_namespace,
+            "session_context_key": f"namespace:{source_namespace}",
+            "memory_primary_key": f"namespace:{source_namespace}",
             "generation_mode": request.mode.value,
             "created_at": created_at.isoformat(),
             "status": "generated",
@@ -303,6 +305,8 @@ class LocalArtifactWriter:
             "rollback_approver_placeholder": "TBD",
             "source_namespace": source_namespace,
             "target_namespace": request.target_namespace,
+            "session_context_key": f"namespace:{source_namespace}",
+            "memory_primary_key": f"namespace:{source_namespace}",
             "generation_mode": request.mode.value,
             "source_snapshot_id_or_timestamp": (
                 inventory.snapshot_id if inventory else request.source_snapshot_id

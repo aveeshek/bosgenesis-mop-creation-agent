@@ -3,7 +3,7 @@ from typing import Any
 from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.config.settings import Settings
 from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
-from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest, NamespaceSwitchRequest
 from bosgenesis_mop_creation_agent.models.responses import McpToolDefinition
 
 
@@ -18,6 +18,16 @@ def mcp_creation_tools() -> list[McpToolDefinition]:
             name="mop_creation_generate",
             description="Create snapshot-backed and MCP-enriched local MoP artifacts.",
             input_schema=MoPGenerationRequest.model_json_schema(),
+        ),
+        McpToolDefinition(
+            name="mop_creation_get_namespace",
+            description="Get the active source namespace and namespace-scoped memory/session context key.",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+        ),
+        McpToolDefinition(
+            name="mop_creation_set_namespace",
+            description="Switch the active source namespace used by generation when a request does not explicitly override source_namespace.",
+            input_schema=NamespaceSwitchRequest.model_json_schema(),
         ),
         McpToolDefinition(
             name="mop_creation_get",
@@ -102,16 +112,24 @@ def call_mcp_tool(
     orchestrator: MoPCreationOrchestrator,
 ) -> dict[str, Any]:
     if tool_name == "mop_creation_health":
+        namespace_state = orchestrator.namespace_state()
         return {
             "status": "ok",
             "agent": settings.agent.name,
             "version": __version__,
-            "source_namespace": settings.agent.source_namespace,
+            "source_namespace": namespace_state["active_namespace"],
+            "configured_source_namespace": namespace_state["configured_namespace"],
+            "session_context_key": namespace_state["session_context_key"],
             "runtime_mode": settings.agent.mode,
         }
     if tool_name == "mop_creation_generate":
         request = MoPGenerationRequest.model_validate(arguments)
         return orchestrator.submit_generation(request).model_dump(mode="json")
+    if tool_name == "mop_creation_get_namespace":
+        return orchestrator.namespace_state()
+    if tool_name == "mop_creation_set_namespace":
+        request = NamespaceSwitchRequest.model_validate(arguments)
+        return orchestrator.set_source_namespace(request.namespace, caller=request.caller)
     if tool_name == "mop_creation_get":
         response = orchestrator.get(str(arguments["mop_id"]))
         if response is None:

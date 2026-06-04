@@ -171,6 +171,8 @@ Generation is asynchronous:
 ```text
 POST /mop-creation/generate -> HTTP 202, status=accepted
 GET  /mop-creation/{mop_id} -> status=accepted | generated | failed
+GET  /namespace -> active source namespace and session context key
+PUT  /namespace -> switch active source namespace
 ```
 
 When `status=accepted`, identifiers and trace placeholders are available, but
@@ -186,6 +188,7 @@ run_id
 correlation_id
 source_namespace
 target_namespace
+session_context_key
 local_file_path
 mongo_saved
 qdrant_reference_count

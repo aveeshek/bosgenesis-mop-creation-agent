@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 import shutil
 from threading import Lock, Thread
+from typing import Any
 from uuid import uuid4
 
 from bosgenesis_mop_creation_agent.classification.models import ClassificationSummary
@@ -46,10 +47,13 @@ class MoPCreationOrchestrator:
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._classifications: dict[str, ClassificationSummary] = {}
         self._latest_mop_id: str | None = None
+        self._active_source_namespace = settings.agent.source_namespace
+        self._namespace_updated_at: datetime | None = None
+        self._namespace_updated_by: str | None = None
         self._lock = Lock()
 
     def generate(self, request: MoPGenerationRequest) -> MoPGenerationResponse:
-        source_namespace = request.source_namespace or self._settings.agent.source_namespace
+        source_namespace = request.source_namespace or self.current_source_namespace()
         return self._generate_with_ids(
             request=request,
             mop_id=str(uuid4()),
@@ -60,7 +64,7 @@ class MoPCreationOrchestrator:
         )
 
     def submit_generation(self, request: MoPGenerationRequest) -> MoPGenerationResponse:
-        source_namespace = request.source_namespace or self._settings.agent.source_namespace
+        source_namespace = request.source_namespace or self.current_source_namespace()
         mop_id = str(uuid4())
         run_id = str(uuid4())
         correlation_id = request.correlation_id or str(uuid4())
@@ -90,6 +94,32 @@ class MoPCreationOrchestrator:
         )
         worker.start()
         return response
+
+    def namespace_state(self) -> dict[str, Any]:
+        with self._lock:
+            active_namespace = self._active_source_namespace
+            updated_at = self._namespace_updated_at
+            updated_by = self._namespace_updated_by
+        return {
+            "configured_namespace": self._settings.agent.source_namespace,
+            "active_namespace": active_namespace,
+            "session_context_key": _session_context_key(active_namespace),
+            "memory_primary_key": _session_context_key(active_namespace),
+            "updated_at": updated_at.isoformat() if updated_at else None,
+            "updated_by": updated_by,
+        }
+
+    def current_source_namespace(self) -> str:
+        with self._lock:
+            return self._active_source_namespace
+
+    def set_source_namespace(self, namespace: str, *, caller: str) -> dict[str, Any]:
+        updated_at = datetime.now(UTC)
+        with self._lock:
+            self._active_source_namespace = namespace
+            self._namespace_updated_at = updated_at
+            self._namespace_updated_by = caller
+        return self.namespace_state()
 
     def _generate_background(
         self,
@@ -175,6 +205,7 @@ class MoPCreationOrchestrator:
             correlation_id=correlation_id,
             source_namespace=source_namespace,
             target_namespace=request.target_namespace,
+            session_context_key=_session_context_key(source_namespace),
             local_file_path=artifact_result.human_mop_pdf_path,
             mongo_saved=False,
             qdrant_reference_count=reference_result.reference_count,
@@ -239,6 +270,7 @@ class MoPCreationOrchestrator:
             correlation_id=correlation_id,
             source_namespace=source_namespace,
             target_namespace=request.target_namespace,
+            session_context_key=_session_context_key(source_namespace),
             local_file_path="",
             mongo_saved=False,
             qdrant_reference_count=0,
@@ -552,6 +584,10 @@ def _classification_summary(
             for item in classification.resources
         ]
     return summary
+
+
+def _session_context_key(namespace: str) -> str:
+    return f"namespace:{namespace}"
 
 
 def _is_safe_artifact_path(run_dir: Path, target: Path) -> bool:

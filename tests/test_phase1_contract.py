@@ -225,6 +225,51 @@ def test_latest_returns_404_before_generation() -> None:
     assert response.status_code == 404
 
 
+def test_runtime_namespace_can_be_read_and_switched(tmp_path: Path) -> None:
+    client = TestClient(create_app(_settings(tmp_path)))
+
+    initial = client.get("/namespace")
+
+    assert initial.status_code == 200
+    assert initial.json()["configured_namespace"] == "bosgenesis"
+    assert initial.json()["active_namespace"] == "bosgenesis"
+    assert initial.json()["session_context_key"] == "namespace:bosgenesis"
+    assert initial.json()["memory_primary_key"] == "namespace:bosgenesis"
+
+    invalid = client.put("/namespace", json={"namespace": "Bad_Namespace", "caller": "pytest"})
+
+    assert invalid.status_code == 422
+
+    switched = client.put(
+        "/namespace",
+        json={"namespace": "qa-bosgenesis", "caller": "pytest"},
+    )
+
+    assert switched.status_code == 200
+    switched_payload = switched.json()
+    assert switched_payload["configured_namespace"] == "bosgenesis"
+    assert switched_payload["active_namespace"] == "qa-bosgenesis"
+    assert switched_payload["session_context_key"] == "namespace:qa-bosgenesis"
+    assert switched_payload["memory_primary_key"] == "namespace:qa-bosgenesis"
+    assert switched_payload["updated_by"] == "pytest"
+
+    health = client.get("/health")
+    assert health.json()["source_namespace"] == "qa-bosgenesis"
+    assert health.json()["configured_source_namespace"] == "bosgenesis"
+    assert health.json()["session_context_key"] == "namespace:qa-bosgenesis"
+
+    accepted = client.post(
+        "/mop-creation/generate",
+        json={"target_namespace": "target-ns", "caller": "pytest"},
+    ).json()
+    assert accepted["source_namespace"] == "qa-bosgenesis"
+    assert accepted["session_context_key"] == "namespace:qa-bosgenesis"
+
+    generated = _wait_for_generated(client, accepted["mop_id"])
+    assert generated["source_namespace"] == "qa-bosgenesis"
+    assert generated["session_context_key"] == "namespace:qa-bosgenesis"
+
+
 def test_delete_all_mop_artifacts_requires_confirmation_and_cleans_storage(tmp_path: Path) -> None:
     client = TestClient(create_app(_settings(tmp_path)))
     first = tmp_path / "mop-one"
@@ -261,6 +306,8 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
     assert {
         "mop_creation_health",
         "mop_creation_generate",
+        "mop_creation_get_namespace",
+        "mop_creation_set_namespace",
         "mop_creation_get",
         "mop_creation_latest",
         "mop_creation_classification",
@@ -270,6 +317,19 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
         "mop_creation_delete_all",
         "mop_creation_effective_config",
     }.issubset(tool_names)
+
+    namespace_response = client.post(
+        "/mcp/tools/mop_creation_set_namespace",
+        json={"namespace": "codex-ns", "caller": "codex"},
+    )
+    assert namespace_response.status_code == 200
+    namespace_result = namespace_response.json()["result"]
+    assert namespace_result["active_namespace"] == "codex-ns"
+    assert namespace_result["session_context_key"] == "namespace:codex-ns"
+
+    get_namespace_response = client.post("/mcp/tools/mop_creation_get_namespace", json={})
+    assert get_namespace_response.status_code == 200
+    assert get_namespace_response.json()["result"]["active_namespace"] == "codex-ns"
 
     generate_response = client.post(
         "/mcp/tools/mop_creation_generate",
@@ -281,6 +341,8 @@ def test_mcp_tool_contract_lists_and_invokes_tools(tmp_path: Path) -> None:
     assert result["status"] == "accepted"
     assert result["run_id"]
     assert result["correlation_id"]
+    assert result["source_namespace"] == "codex-ns"
+    assert result["session_context_key"] == "namespace:codex-ns"
     assert result["target_namespace"] == "bosgenesis-copy-dev"
     generated = _wait_for_generated(client, result["mop_id"])
     assert generated["status"] == "generated"

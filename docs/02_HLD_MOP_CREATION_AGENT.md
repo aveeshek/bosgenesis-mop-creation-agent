@@ -4,12 +4,15 @@
 **Agent name:** `bosgenesis-mop-creation-agent`  
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
+**Runtime source namespace:** Config default unless switched through REST/MCP namespace APIs  
 **Target namespace:** Provided at runtime  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
-The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes a production-readable paginated PDF from that same human MoP model. It also creates Markdown installation notes and a standalone machine execution YAML plan for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
+The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes a production-readable paginated PDF from that same human MoP model. It also creates Markdown installation notes and a standalone machine execution YAML plan for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent for the active source namespace and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
 The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to generate, inspect, and validate output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed memory to reason about ambiguous next steps.
+
+The configured source namespace is the startup default only. Operators may switch the active runtime source namespace through REST or MCP APIs. Generation requests may still provide an explicit per-run `source_namespace` override. The namespace identity `namespace:<active_source_namespace>` is the primary key for agentic memory and session context.
 
 ## 1. High-Level Architecture
 
@@ -60,9 +63,9 @@ flowchart LR
 
 | Layer | Responsibility |
 |---|---|
-| API Layer | Accept on-demand generation requests and return file metadata/content. |
-| MCP Layer | Expose on-demand Codex tools for generation, retrieval, artifact preview, artifact cleanup, and configuration inspection. |
-| Orchestrator | Coordinate snapshot read, MCP enrichment, classification, normalization, rendering, persistence, tracing, and response shaping. |
+| API Layer | Accept on-demand generation requests, expose runtime namespace get/switch APIs, and return file metadata/content. |
+| MCP Layer | Expose on-demand Codex tools for generation, retrieval, runtime namespace get/switch, artifact preview, artifact cleanup, and configuration inspection. |
+| Orchestrator | Coordinate runtime namespace state, snapshot read, MCP enrichment, classification, normalization, rendering, persistence, tracing, and response shaping. |
 | Snapshot Reader | Read latest Analytical MoP ETL Agent data from PostgreSQL and ClickHouse. |
 | K8s MCP Client | Validate live Kubernetes resource state using the existing K8s Inspector MCP. |
 | Helm MCP Client | Validate Helm releases, values, manifests, and history using the existing Helm MCP. |
@@ -73,7 +76,7 @@ flowchart LR
 | Human MoP and Installation Notes Renderer | Generate sample-format human MoP content, paginated PDF output for human review, Markdown installation notes for agents, and standalone machine execution YAML. |
 | Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Generation-time Qdrant access remains read-only; optional Qdrant ingestion is a separate gated admin flow. |
 | Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
-| Memory Layer | Save and retrieve generation patterns, previous MoPs, template decisions, short-term run state, episodic memory, and knowledge memory. |
+| Memory Layer | Save and retrieve generation patterns, previous MoPs, template decisions, short-term run state, episodic memory, and knowledge memory keyed by `namespace:<source_namespace>`. |
 
 ## 3. End-to-End Flow
 
@@ -89,8 +92,9 @@ sequenceDiagram
     participant M as MongoDB/Metadata Stores
     participant O as Langfuse/SigNoz
 
-    C->>A: POST /mop-creation/generate target_namespace
+    C->>A: Optional GET/PUT /namespace, then POST /mop-creation/generate target_namespace
     A->>O: start trace
+    A->>A: resolve source namespace from request override or active runtime namespace
     A->>PG: read latest source namespace snapshot
     A->>CH: read analytical inventory if enabled
     A->>K: validate latest namespace summary/resources

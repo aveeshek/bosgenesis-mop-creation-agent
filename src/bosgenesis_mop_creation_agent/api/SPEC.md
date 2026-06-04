@@ -10,6 +10,8 @@ Implemented REST endpoints:
 
 ```text
 GET  /health
+GET  /namespace
+PUT  /namespace
 POST /mop-creation/generate
 GET  /mop-creation/{mop_id}
 DELETE /mop-creation/{mop_id}
@@ -33,6 +35,8 @@ Implemented on-demand MCP tools:
 
 ```text
 mop_creation_health
+mop_creation_get_namespace
+mop_creation_set_namespace
 mop_creation_generate
 mop_creation_get
 mop_creation_latest
@@ -68,6 +72,14 @@ mop_creation_effective_config
 - `caller`: caller identity.
 - `confirm`: must be `true`.
 
+`NamespaceSwitchRequest` must include:
+
+- `namespace`: active source namespace to use for future generation requests
+  that do not explicitly provide `source_namespace`;
+- `caller`: caller identity for audit and session context metadata.
+
+Namespace values must be Kubernetes RFC1123 labels.
+
 ## Response contract
 
 `POST /mop-creation/generate` must start a background run and return HTTP 202
@@ -81,6 +93,7 @@ Responses must include:
 - `correlation_id`;
 - source namespace;
 - target namespace;
+- `session_context_key` as `namespace:<source_namespace>`;
 - status;
 - human MoP PDF file path;
 - Markdown installation notes file path;
@@ -120,6 +133,11 @@ storage.
 - REST and MCP must call the same orchestration contract.
 - REST is the standalone trigger path.
 - Generation is asynchronous; POST starts a run and GET retrieves current run state.
+- `GET /namespace` returns configured namespace, active runtime namespace, and
+  namespace-derived memory/session context key.
+- `PUT /namespace` switches the active runtime source namespace without changing
+  static config; explicit `source_namespace` in a generation request remains a
+  per-run override.
 - MCP is the Codex iterative refinement path.
 - Health/config responses must redact secrets.
 - API code must never call Kubernetes, Helm, databases, caches, or streams directly for evidence; it delegates to orchestration.

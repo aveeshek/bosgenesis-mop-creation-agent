@@ -170,6 +170,8 @@ flowchart LR
 
 ```text
 POST /mop-creation/generate
+GET  /namespace
+PUT  /namespace
 GET  /mop-creation/{mop_id}
 GET  /mop-creation/latest
 GET  /mop-creation/{mop_id}/classification
@@ -187,6 +189,8 @@ GET  /config/effective
 
 ```text
 mop_creation_health
+mop_creation_get_namespace
+mop_creation_set_namespace
 mop_creation_generate
 mop_creation_get
 mop_creation_latest
@@ -202,7 +206,7 @@ mop_creation_effective_config
 
 ```text
 MoPGenerationRequest
-- source_namespace: optional string, defaults to config source_namespace
+- source_namespace: optional string, defaults to active runtime namespace
 - target_namespace: required string
 - source_snapshot_id: optional string, default latest
 - mode: enum, platform-only or application
@@ -226,6 +230,7 @@ MoPGenerationResponse
 - correlation_id: string
 - source_namespace: string
 - target_namespace: string
+- session_context_key: string, namespace:<source_namespace>
 - status: string
 - human_mop_pdf_path: string
 - human_mop_markdown_path: string

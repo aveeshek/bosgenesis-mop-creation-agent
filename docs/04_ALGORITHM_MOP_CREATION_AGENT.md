@@ -4,6 +4,7 @@
 **Agent name:** `bosgenesis-mop-creation-agent`  
 **Primary mode:** On-demand only  
 **Default source namespace:** `bosgenesis` from configuration  
+**Runtime source namespace:** Config default unless switched through REST/MCP namespace APIs  
 **Target namespace:** Provided at runtime  
 **Primary purpose:** Generate sample-format human Method of Procedure (MoP) artifacts and LLM/agent-readable Markdown installation notes that can recreate or mimic BOS Genesis namespace resources into a target namespace using copyable commands and structured autonomous-execution instructions.
 
@@ -54,14 +55,15 @@ function generate_mop(request):
     validate mode in ["platform-only", "application"]
     validate v1 scope: single namespace, namespace-only, Kubernetes/Helm, public repos only
 
-    source_namespace = request.source_namespace or config.source_namespace
+    source_namespace = request.source_namespace or runtime.active_source_namespace
+    session_context_key = "namespace:" + source_namespace
     mop_id = uuid()
     run_id = uuid()
     correlation_id = request.correlation_id or uuid()
 
     start langfuse trace if enabled
     start otel root span if enabled
-    emit audit event request_received
+    emit audit event request_received with session_context_key
 
     snapshot = read_latest_snapshot(source_namespace)
 

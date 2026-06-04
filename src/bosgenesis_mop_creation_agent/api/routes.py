@@ -11,10 +11,15 @@ from bosgenesis_mop_creation_agent import __version__
 from bosgenesis_mop_creation_agent.common.logging import get_logger
 from bosgenesis_mop_creation_agent.config.settings import Settings
 from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
-from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest, QdrantIngestMoPRequest
+from bosgenesis_mop_creation_agent.models.requests import (
+    MoPGenerationRequest,
+    NamespaceSwitchRequest,
+    QdrantIngestMoPRequest,
+)
 from bosgenesis_mop_creation_agent.models.responses import (
     McpToolResponse,
     MoPGenerationResponse,
+    NamespaceStateResponse,
 )
 
 router = APIRouter()
@@ -32,18 +37,21 @@ def _orchestrator(request: Request) -> MoPCreationOrchestrator:
 @router.get("/health")
 def health(request: Request) -> dict[str, Any]:
     settings = _settings(request)
+    namespace_state = _orchestrator(request).namespace_state()
     logger.info(
         "health_checked",
         extra={
             "agent_name": settings.agent.name,
-            "source_namespace": settings.agent.source_namespace,
+            "source_namespace": namespace_state["active_namespace"],
         },
     )
     return {
         "status": "ok",
         "agent": settings.agent.name,
         "version": __version__,
-        "source_namespace": settings.agent.source_namespace,
+        "source_namespace": namespace_state["active_namespace"],
+        "configured_source_namespace": namespace_state["configured_namespace"],
+        "session_context_key": namespace_state["session_context_key"],
         "runtime_mode": settings.agent.mode,
     }
 
@@ -53,6 +61,39 @@ def effective_config(request: Request) -> dict[str, Any]:
     settings = _settings(request)
     logger.info("effective_config_requested", extra={"agent_name": settings.agent.name})
     return settings.redacted_dict()
+
+
+@router.get("/namespace", response_model=NamespaceStateResponse)
+def get_namespace(request: Request) -> dict[str, Any]:
+    state = _orchestrator(request).namespace_state()
+    logger.info(
+        "runtime_namespace_requested",
+        extra={
+            "active_namespace": state["active_namespace"],
+            "session_context_key": state["session_context_key"],
+        },
+    )
+    return state
+
+
+@router.put("/namespace", response_model=NamespaceStateResponse)
+def set_namespace(
+    request_body: NamespaceSwitchRequest,
+    request: Request,
+) -> dict[str, Any]:
+    state = _orchestrator(request).set_source_namespace(
+        request_body.namespace,
+        caller=request_body.caller,
+    )
+    logger.info(
+        "runtime_namespace_updated",
+        extra={
+            "caller": request_body.caller,
+            "active_namespace": state["active_namespace"],
+            "session_context_key": state["session_context_key"],
+        },
+    )
+    return state
 
 
 @router.post(

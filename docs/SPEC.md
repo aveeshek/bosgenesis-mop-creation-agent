@@ -12,6 +12,7 @@ The documentation set must preserve the original product context:
 - the professional PDF uses the approved 11-section layout, renders execution commands from `machine_execution_plan`, renders validation as human-readable copy-pasteable steps, preserves shell syntax exactly, and groups Appendix A resource snapshots into tables;
 - the Markdown installation notes include a canonical `machine_execution_plan` YAML block, and the same plan is also written as a standalone YAML artifact for downstream agents;
 - generated artifacts are retrievable through governed preview, full-file download, generated-folder archive, and housekeeping delete APIs;
+- the configured source namespace is the startup default, the active source namespace may be switched at runtime through REST/MCP APIs, and `namespace:<active_source_namespace>` is the primary key for agentic memory and session context;
 - the agent may read existing vectorized MoP/installation-note references from Qdrant for matching components during generation;
 - optional Qdrant insertion of generated MoP artifacts is a separate gated admin flow that requires explicit user confirmation, and generation remains read-only;
 - Codex integration is through an on-demand MCP server that supports generation, retrieval, configuration inspection, artifact preview, and artifact cleanup;

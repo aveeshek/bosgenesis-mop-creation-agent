@@ -24,6 +24,7 @@ class MoPGenerationResponse(BaseModel):
     correlation_id: str
     source_namespace: str
     target_namespace: str
+    session_context_key: str | None = None
     local_file_path: str
     mongo_saved: bool = False
     qdrant_reference_count: int = 0
@@ -57,3 +58,12 @@ class McpToolDefinition(BaseModel):
 class McpToolResponse(BaseModel):
     tool: str
     result: dict[str, Any]
+
+
+class NamespaceStateResponse(BaseModel):
+    configured_namespace: str
+    active_namespace: str
+    session_context_key: str
+    memory_primary_key: str
+    updated_at: datetime | None = None
+    updated_by: str | None = None

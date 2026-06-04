@@ -47,6 +47,10 @@ memory.langmem.enabled = true
 memory.letta.enabled = false
 ```
 
+`agent.source_namespace` is the configured default source namespace. Runtime
+namespace switching may override the active source namespace in memory for the
+current process, but it must not mutate the static config or Helm values.
+
 `llm.default_model` selects the active profile. Switching among supported models
 should require only a config value change, for example `gemma4:26b`, `gpt-4.1-mini`,
 `gpt-5`, `gemma4`, or `llama70b`.
