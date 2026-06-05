@@ -118,6 +118,43 @@ class ObservabilitySettings(BaseModel):
     otlp_endpoint: str | None = None
 
 
+class MemoryBackendSettings(BaseModel):
+    enabled: bool = False
+    endpoint: str | None = None
+    dsn: str | None = None
+    collection: str | None = None
+    table: str | None = None
+    db: int = 0
+    key_prefix: str = "mop-agent-memory"
+    timeout_seconds: float = 5
+
+
+class MemorySettings(BaseModel):
+    enabled: bool = False
+    langmem_enabled: bool = True
+    short_term_enabled: bool = True
+    episodic_enabled: bool = True
+    knowledge_enabled: bool = True
+    max_context_items: int = 5
+    max_summary_chars: int = 800
+    redis: MemoryBackendSettings = Field(
+        default_factory=lambda: MemoryBackendSettings(
+            enabled=True,
+            endpoint="redis-master.bosgenesis.svc.cluster.local:6379",
+        )
+    )
+    pgvector: MemoryBackendSettings = Field(
+        default_factory=lambda: MemoryBackendSettings(
+            enabled=True,
+            table="mop_agent_memory",
+        )
+    )
+    qdrant: MemoryBackendSettings = Field(
+        default_factory=lambda: MemoryBackendSettings(collection="mop_agent_memory")
+    )
+    letta: MemoryBackendSettings = Field(default_factory=MemoryBackendSettings)
+
+
 class LlmModelProfile(BaseModel):
     provider: str = "azure_openai"
     model: str | None = None
@@ -208,6 +245,7 @@ class Settings(BaseModel):
     features: FeatureSettings = Field(default_factory=FeatureSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     llm: LlmSettings = Field(default_factory=LlmSettings)
 
     def redacted_dict(self) -> dict[str, Any]:
@@ -281,6 +319,23 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "QDRANT_MIN_SCORE": ("retrieval", "qdrant", "min_score"),
         "QDRANT_INGESTION_API_ENABLED": ("retrieval", "qdrant", "ingestion_api_enabled"),
         "QDRANT_INGESTION_VECTOR_SIZE": ("retrieval", "qdrant", "ingestion_vector_size"),
+        "MEMORY_ENABLED": ("memory", "enabled"),
+        "MEMORY_LANGMEM_ENABLED": ("memory", "langmem_enabled"),
+        "MEMORY_SHORT_TERM_ENABLED": ("memory", "short_term_enabled"),
+        "MEMORY_EPISODIC_ENABLED": ("memory", "episodic_enabled"),
+        "MEMORY_KNOWLEDGE_ENABLED": ("memory", "knowledge_enabled"),
+        "MEMORY_MAX_CONTEXT_ITEMS": ("memory", "max_context_items"),
+        "MEMORY_MAX_SUMMARY_CHARS": ("memory", "max_summary_chars"),
+        "MEMORY_REDIS_ENABLED": ("memory", "redis", "enabled"),
+        "MEMORY_REDIS_ENDPOINT": ("memory", "redis", "endpoint"),
+        "MEMORY_REDIS_DB": ("memory", "redis", "db"),
+        "MEMORY_REDIS_KEY_PREFIX": ("memory", "redis", "key_prefix"),
+        "MEMORY_PGVECTOR_ENABLED": ("memory", "pgvector", "enabled"),
+        "MEMORY_PGVECTOR_DSN": ("memory", "pgvector", "dsn"),
+        "MEMORY_PGVECTOR_TABLE": ("memory", "pgvector", "table"),
+        "MEMORY_QDRANT_ENABLED": ("memory", "qdrant", "enabled"),
+        "MEMORY_QDRANT_ENDPOINT": ("memory", "qdrant", "endpoint"),
+        "MEMORY_QDRANT_COLLECTION": ("memory", "qdrant", "collection"),
     }
     for env_name, path in env_map.items():
         env_value = os.getenv(env_name)
@@ -293,6 +348,9 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         if env_name.endswith("_PORT") or env_name in {
             "QDRANT_TOP_K",
             "QDRANT_INGESTION_VECTOR_SIZE",
+            "MEMORY_MAX_CONTEXT_ITEMS",
+            "MEMORY_MAX_SUMMARY_CHARS",
+            "MEMORY_REDIS_DB",
         }:
             value = int(env_value)
         elif env_name.endswith("_ENABLED"):

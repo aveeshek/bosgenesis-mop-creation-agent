@@ -51,10 +51,10 @@ The generated human MoP content must allow a human operator to recreate source n
 - Store MoP metadata and content in MongoDB when enabled.
 - Store execution/request metadata in PostgreSQL/ClickHouse when enabled.
 - Emit traces to Langfuse and OpenTelemetry/SigNoz when enabled.
-- Use Redis, pgvector, and LangMem as optional memory/cache/retrieval backends.
+- Use LangMem-shaped in-process memory, Redis durable short-term memory, and PostgreSQL/pgvector durable episodic memory when Phase 11 memory is enabled.
 - Use agentic memory classes including short-term, episodic, and knowledge memory.
 - Return generated run directory, artifact manifest, human MoP path, PDF path, Markdown installation notes path, machine plan path, and optionally notes content to caller/Codex.
-- Include Letta adapter interface in the future codebase but keep disabled.
+- Include the Letta adapter interface as disabled future scope.
 
 ### Out of scope
 
@@ -103,7 +103,8 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-19 | Return generated file metadata and optional content to caller. |
 | FR-20 | Support `application` mode metadata-only schema/topology output for PostgreSQL, ClickHouse, MongoDB, Redis, and Kafka where approved evidence exists. |
 | FR-21 | Validate generated artifacts for secret leakage, namespace rewrite, blocked resources, production data leakage, and required sections before publication. |
-| FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and LangMem-backed memory. |
+| FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and optional Phase 11 memory. |
+| FR-22a | Support optional Phase 11 memory reads/writes using `namespace:<source_namespace>` with non-secret short-term, episodic, and knowledge summaries. |
 | FR-23 | Provide governed REST APIs for artifact preview, full artifact download, generated-folder zip archive, single-run deletion, and bulk artifact cleanup. |
 | FR-24 | Provide an optional, config-gated admin API to ingest completed redacted MoP artifacts into Qdrant for future reference lookup. |
 | FR-25 | Provide optional bounded LLM reasoning for ambiguity detection, public Helm chart hints, install-order sanity, missing manifest/spec explanations, required human inputs, and confidence labels. |
@@ -195,6 +196,9 @@ Response:
   "mongo_saved": false,
   "qdrant_reference_count": 0,
   "qdrant_lookup_status": "not_executed",
+  "memory_status": "pending",
+  "memory_read_count": 0,
+  "memory_written_count": 0,
   "resource_count": 0,
   "helm_release_count": 0,
   "helm_managed_resource_count": 0,
@@ -220,6 +224,9 @@ Polling response after completion:
   "mongo_saved": true,
   "qdrant_reference_count": 3,
   "qdrant_lookup_status": "references_found",
+  "memory_status": "ok",
+  "memory_read_count": 5,
+  "memory_written_count": 3,
   "resource_count": 42,
   "helm_release_count": 5,
   "helm_managed_resource_count": 25,
@@ -354,12 +361,24 @@ observability:
     otlp_endpoint: http://signoz-otel-collector.signoz:4317
 
 memory:
-  langmem:
+  enabled: false
+  langmem_enabled: true
+  short_term_enabled: true
+  episodic_enabled: true
+  knowledge_enabled: true
+  max_context_items: 5
+  max_summary_chars: 800
+  redis:
     enabled: true
-    classes:
-      - short_term
-      - episodic
-      - knowledge
+    db: 0
+    key_prefix: mop-agent-memory
+  pgvector:
+    enabled: true
+    dsn: ""  # injected through MEMORY_PGVECTOR_DSN secret/env in deployments
+    table: mop_agent_memory
+  qdrant:
+    enabled: false
+    collection: mop_agent_memory
   letta:
     enabled: false
     code_available: true
@@ -428,6 +447,7 @@ The Markdown installation notes must include structured metadata, execution phas
 | AC-13 | Application mode includes only metadata/schema/topology and no production data. |
 | AC-14 | Artifact validation fails publication if secret-like values are detected. |
 | AC-15 | Markdown installation notes and standalone machine execution YAML are generated alongside the human MoP artifacts. |
-| AC-16 | Standalone REST mode can use LangGraph/LangChain, configured LLM, and LangMem-backed memory without Codex. |
+| AC-16 | Standalone REST mode can use LangGraph/LangChain, configured LLM, and optional Phase 11 memory without Codex. |
 | AC-17 | Artifact preview, full-file download, and generated-folder zip archive endpoints can retrieve generated outputs without shell access. |
 | AC-18 | Single-run and bulk housekeeping delete APIs remove only files under the configured artifact storage root. |
+| AC-19 | When memory is enabled, generation reads namespace-scoped prior context, writes non-secret summaries, reports memory status/read/write counts, persists short-term records in Redis, persists episodic records in PostgreSQL/pgvector, and continues with warnings if an optional memory backend is unavailable. |

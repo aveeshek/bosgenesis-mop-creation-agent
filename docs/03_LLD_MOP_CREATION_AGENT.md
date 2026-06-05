@@ -9,7 +9,7 @@
 
 The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived MoP template. The current implementation writes a production-readable paginated PDF from the same rendered human MoP markdown. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed short-term, episodic, and knowledge memory.
+The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and optional Phase 11 short-term, episodic, and knowledge memory.
 
 ## 1. Suggested Project Structure
 
@@ -76,11 +76,10 @@ bosgenesis-mop-creation-agent/
         postgres_metadata_store.py
         clickhouse_metrics_store.py
       memory/
-        memory_router.py
-        redis_cache.py
-        pgvector_adapter.py
-        langmem_adapter.py
-        letta_adapter_disabled.py
+        models.py
+        adapters.py
+        service.py
+        __init__.py
       reasoning/
         planner.py
         dependency_graph.py
@@ -140,7 +139,8 @@ bosgenesis-mop-creation-agent/
 | `persistence/mongodb_store.py` | Stores full MoP document and generation trace when enabled. |
 | `persistence/postgres_metadata_store.py` | Stores run and artifact metadata when enabled. |
 | `persistence/clickhouse_metrics_store.py` | Stores generation metrics when enabled. |
-| `memory/memory_router.py` | Coordinates optional Redis, pgvector, LangMem, and future Letta memory backends. |
+| `memory/service.py` | Reads/writes namespace-scoped safe memory summaries for short-term, episodic, and knowledge memory. |
+| `memory/adapters.py` | Provides the in-process LangMem-shaped first/cache adapter, implemented Redis short-term adapter, implemented PostgreSQL/pgvector episodic adapter, Qdrant future placeholder, and disabled Letta placeholder. |
 | `reasoning/planner.py` | Coordinates deterministic and LLM-assisted reasoning for install order, unknowns, and inference labels. |
 | `llm/bounded_reasoning.py` | Builds a redacted evidence pack, optionally runs a LangGraph/LangChain model call, validates `ReasoningEnvelope` output, and returns advisory-only findings. |
 | `llm/langgraph_workflow.py` | Runs standalone REST-triggered autonomous reasoning as a LangGraph workflow with explicit state transitions and repair loops. |
@@ -240,6 +240,9 @@ MoPGenerationResponse
 - run_directory_path: string
 - content: optional string
 - installation_notes_content: optional string
+- memory_status: string
+- memory_read_count: integer
+- memory_written_count: integer
 - resource_count: integer
 - helm_release_count: integer
 - excluded_resource_count: integer
@@ -493,8 +496,12 @@ This agent does not persist generated chunks into Qdrant during generation. Any 
 | Helm MCP unavailable | Generate raw Kubernetes MoP and warn that Helm section is incomplete. |
 | MongoDB unavailable | Continue; local file still returned. |
 | Qdrant unavailable | Continue without prior references; local file still returned and warning recorded. |
-| Redis unavailable | Continue without cache/idempotency lock if policy permits. |
-| LangMem unavailable | Continue without memory enrichment. |
+| Redis unavailable | Continue without durable short-term memory and record backend warning/status. |
+| LangMem unavailable | Continue without in-process/cache memory enrichment. |
+| PostgreSQL/pgvector unavailable | Continue without durable episodic memory and record backend warning/status. |
+| Qdrant/Letta memory disabled | Continue; these adapters are future memory scope and must not block generation. |
+| Memory disabled | Continue with `memory_status=disabled`, zero read/write counts, and no memory context. |
+| Memory backend unavailable | Continue generation with warning/status; memory must not block deterministic artifacts. |
 | External LLM unavailable in standalone mode | Return error unless deterministic-only fallback is explicitly allowed. |
 | Langfuse/SigNoz unavailable | Continue with local structured logs. |
 | Secret-like value detected in artifact | Fail validation and do not publish artifact. |
@@ -547,3 +554,6 @@ Each event must carry `run_id`, `correlation_id`, source namespace, target names
 | Installation notes generated | `.installation.md` notes contain metadata, machine execution plan, phases, dependency graph, validation, rollback, evidence, and unknowns. |
 | Artifact lifecycle | Preview, download, generated-folder archive, single-run delete, and bulk delete stay within the artifact storage root. |
 | Standalone LLM path | LangGraph/LangChain/model gateway path records reasoning trace and handles model failure according to policy. |
+| Memory disabled path | Generation returns deterministic artifacts with `memory_status=disabled` and zero memory counts. |
+| Redis short-term memory | Later runs can read prior safe short-term summaries from Redis using `<key_prefix>:<namespace_key>:records`. |
+| PostgreSQL/pgvector episodic memory | Later runs can read prior safe episodic summaries from the configured `mop_agent_memory` table or override table. |

@@ -129,6 +129,29 @@ config:
     langfuse_enabled: true
     signoz_enabled: true
     otlp_endpoint: http://signoz-otel-collector.signoz:4317
+  memory:
+    enabled: true
+    langmem_enabled: true
+    short_term_enabled: true
+    episodic_enabled: true
+    knowledge_enabled: true
+    max_context_items: 5
+    max_summary_chars: 800
+    redis:
+      enabled: true
+      endpoint: redis-master.bosgenesis.svc.cluster.local:6379
+      db: 0
+      key_prefix: mop-agent-memory
+    pgvector:
+      enabled: true
+      dsn: ""
+      table: mop_agent_memory
+    qdrant:
+      enabled: false
+      endpoint: http://qdrant.bosgenesis.svc.cluster.local:6333
+      collection: mop_agent_memory
+    letta:
+      enabled: false
   llm:
     standalone_enabled: true
     framework: langgraph-langchain
@@ -184,4 +207,5 @@ secret:
   create: false
   name: bosgenesis-mop-creation-agent-secret
   postgresDsn: ""
+  memoryPgvectorDsn: ""
   clickhousePassword: ""

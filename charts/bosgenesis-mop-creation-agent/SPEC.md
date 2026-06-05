@@ -2,9 +2,9 @@
 
 ## Intent
 
-This future chart will deploy `bosgenesis-mop-creation-agent` into the `bosgenesis` namespace.
+This chart deploys `bosgenesis-mop-creation-agent` into the configured namespace, normally `bosgenesis`.
 
-## Future resources
+## Resources
 
 - Deployment.
 - Service.

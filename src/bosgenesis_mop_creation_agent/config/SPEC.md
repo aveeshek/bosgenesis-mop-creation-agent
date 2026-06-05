@@ -43,13 +43,25 @@ llm.model_profiles.gpt-4.1-mini.provider = azure_openai
 llm.model_profiles.gpt-5.provider = azure_openai
 llm.model_profiles.gemma4.provider = ollama
 llm.model_profiles.llama70b.provider = ollama
-memory.langmem.enabled = true
+memory.enabled = false
+memory.langmem_enabled = true
+memory.redis.enabled = true
+memory.pgvector.enabled = true
+memory.qdrant.enabled = false
 memory.letta.enabled = false
 ```
 
 `agent.source_namespace` is the configured default source namespace. Runtime
 namespace switching may override the active source namespace in memory for the
 current process, but it must not mutate the static config or Helm values.
+
+`memory.enabled` controls the Phase 11 agentic memory layer. Memory is disabled
+by default. When enabled, the in-process LangMem-shaped adapter is the first/cache
+layer. Redis is the implemented durable short-term memory backend using
+namespace-scoped list keys. PostgreSQL/pgvector is the implemented durable
+episodic memory backend using `MEMORY_PGVECTOR_DSN` and the configured memory
+table. Qdrant/Letta remain disabled future memory placeholders until their
+durable wiring is explicitly enabled.
 
 `llm.default_model` selects the active profile. Switching among supported models
 should require only a config value change, for example `gemma4:26b`, `gpt-4.1-mini`,

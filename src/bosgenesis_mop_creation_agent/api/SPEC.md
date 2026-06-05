@@ -94,6 +94,7 @@ Responses must include:
 - source namespace;
 - target namespace;
 - `session_context_key` as `namespace:<source_namespace>`;
+- memory status, memory read count, and memory written count;
 - status;
 - human MoP PDF file path;
 - Markdown installation notes file path;
@@ -146,3 +147,5 @@ storage.
 - Artifact archive returns a zip for approved directories such as `generated/`.
 - Housekeeping deletes remove only configured local artifact storage and in-memory run metadata.
 - Qdrant ingestion is a separate admin operation, requires explicit user confirmation, and must not run as part of generation.
+- Memory is optional; when enabled, generation reads/writes only namespace-scoped
+  non-secret summaries and surfaces read/write counts in responses.

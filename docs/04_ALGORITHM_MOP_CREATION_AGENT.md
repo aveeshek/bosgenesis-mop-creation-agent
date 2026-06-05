@@ -65,6 +65,7 @@ function generate_mop(request):
     start otel root span if enabled
     emit audit event request_received with session_context_key
 
+    memory_context = read_namespace_memory(session_context_key)
     snapshot = read_latest_snapshot(source_namespace)
 
     if k8s_mcp.enabled:
@@ -92,6 +93,7 @@ function generate_mop(request):
         bounded_llm_reasoning = request_bounded_reasoning(
             redacted_evidence_pack,
             prior_references,
+            memory_context,
             prompt_contracts=[
                 ambiguity_detection,
                 helm_chart_public_repo_suggestion,
@@ -200,6 +202,10 @@ function generate_mop(request):
     artifact_manifest_path = write_artifact_manifest(mop_id)
     save optional stores if enabled
 
+    write non-secret memory summaries for short-term, episodic, and knowledge memory
+    persist short-term summaries to Redis when enabled
+    persist episodic summaries to PostgreSQL/pgvector when enabled and DSN is configured
+    keep knowledge summaries in LangMem-shaped memory; Qdrant/Letta memory remain future disabled scope
     finish traces
     return response
 ```
@@ -466,7 +472,23 @@ function refine_with_langgraph_llm(plan, redacted_evidence, prior_references, me
     validate model output against policy
     label inferred steps
     store non-secret reasoning summary in LangMem
-    return refined plan
+
+function read_namespace_memory(namespace_key):
+    if memory.enabled is false:
+        return disabled context
+    read short-term, episodic, and knowledge summaries for namespace_key
+    drop any record that fails secret-pattern checks
+    return prior_context_only_not_current_fact records
+
+function write_namespace_memory(namespace_key, run_summary):
+    if memory.enabled is false:
+        return disabled
+    build non-secret summaries from counts, labels, warning counts, and artifact metadata
+    never store raw manifests, values, prompts, credentials, rows, documents, or messages
+    write through LangMem-shaped adapter, Redis for short-term records, and PostgreSQL/pgvector for episodic records when configured
+    label memory as prior_context_only_not_current_fact in artifacts and prompts
+    continue generation if optional memory backend is unavailable
+    return memory write status and backend_status; do not return refined plan from memory writes
 ```
 
 LLM reasoning must never receive secret values or production data. Every prompt, response, inference, and validation result must be traced in Langfuse and correlated with SigNoz/OpenTelemetry spans.

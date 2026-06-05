@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import shutil
 from threading import Lock, Thread
@@ -8,6 +9,7 @@ from uuid import uuid4
 from bosgenesis_mop_creation_agent.classification.models import ClassificationSummary
 from bosgenesis_mop_creation_agent.classification.resource_classifier import classify_inventory
 from bosgenesis_mop_creation_agent.config.settings import Settings
+from bosgenesis_mop_creation_agent.memory.service import AgentMemoryService
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.models.responses import (
     ArtifactMetadata,
@@ -44,6 +46,7 @@ class MoPCreationOrchestrator:
             data_ingestion_client=DataIngestionClient.from_settings(settings.mcp.data_ingestion_agent),
         )
         self._reference_lookup = ReferenceLookupService(settings.retrieval.qdrant)
+        self._memory = AgentMemoryService(settings.memory)
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._classifications: dict[str, ClassificationSummary] = {}
         self._latest_mop_id: str | None = None
@@ -167,6 +170,13 @@ class MoPCreationOrchestrator:
         created_at: datetime,
     ) -> MoPGenerationResponse:
         warnings: list[str] = []
+        namespace_key = _session_context_key(source_namespace)
+        memory_context = self._memory.read_context(
+            namespace_key=namespace_key,
+            correlation_id=correlation_id,
+            run_id=run_id,
+        )
+        warnings.extend(memory_context.warnings)
         snapshot_result = self._snapshot_selector.read(source_namespace, request.source_snapshot_id)
         warnings.extend(snapshot_result.warnings)
         enrichment_result = self._mcp_enrichment.enrich(
@@ -194,8 +204,31 @@ class MoPCreationOrchestrator:
             inventory=inventory,
             classification=classification,
             qdrant_references=reference_result,
+            memory_context=memory_context,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
             mcp_sources_attempted=enrichment_result.sources_attempted,
+        )
+        memory_write_result = self._memory.write_generation_summary(
+            namespace_key=namespace_key,
+            mop_id=mop_id,
+            run_id=run_id,
+            correlation_id=correlation_id,
+            target_namespace=request.target_namespace,
+            inventory=inventory,
+            classification=classification,
+            qdrant_references=reference_result,
+            warnings=artifact_result.warnings,
+        )
+        if memory_write_result.warnings:
+            artifact_result.warnings.extend(memory_write_result.warnings)
+        _update_artifact_memory_write_metadata(
+            artifact_result.artifact_manifest_path,
+            {
+                "write_status": memory_write_result.status,
+                "written_count": memory_write_result.written_count,
+                "backend_status": memory_write_result.backend_status,
+                "write_warnings": memory_write_result.warnings,
+            },
         )
 
         response = MoPGenerationResponse(
@@ -210,6 +243,11 @@ class MoPCreationOrchestrator:
             mongo_saved=False,
             qdrant_reference_count=reference_result.reference_count,
             qdrant_lookup_status=reference_result.status,
+            memory_status=memory_write_result.status
+            if memory_write_result.enabled
+            else memory_context.status,
+            memory_read_count=memory_context.read_count,
+            memory_written_count=memory_write_result.written_count,
             inventory_source=inventory.source if inventory else None,
             source_snapshot_id=inventory.snapshot_id if inventory else request.source_snapshot_id,
             snapshot_sources_attempted=snapshot_result.sources_attempted,
@@ -275,6 +313,9 @@ class MoPCreationOrchestrator:
             mongo_saved=False,
             qdrant_reference_count=0,
             qdrant_lookup_status="not_executed",
+            memory_status="not_executed",
+            memory_read_count=0,
+            memory_written_count=0,
             classification_summary=_classification_summary(None),
             warning_count=0,
             trace_ids=TraceIds(
@@ -588,6 +629,19 @@ def _classification_summary(
 
 def _session_context_key(namespace: str) -> str:
     return f"namespace:{namespace}"
+
+
+def _update_artifact_memory_write_metadata(path: str, metadata: dict[str, Any]) -> None:
+    artifact_path = Path(path)
+    if not artifact_path.is_file():
+        return
+    manifest = json.loads(artifact_path.read_text(encoding="utf-8"))
+    memory = manifest.setdefault("memory", {})
+    memory.update(metadata)
+    artifact_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 
 
 def _is_safe_artifact_path(run_dir: Path, target: Path) -> bool:

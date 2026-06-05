@@ -29,6 +29,9 @@ class MoPGenerationResponse(BaseModel):
     mongo_saved: bool = False
     qdrant_reference_count: int = 0
     qdrant_lookup_status: str = "not_executed"
+    memory_status: str = "not_executed"
+    memory_read_count: int = 0
+    memory_written_count: int = 0
     inventory_source: str | None = None
     source_snapshot_id: str | None = None
     snapshot_sources_attempted: list[str] = Field(default_factory=list)

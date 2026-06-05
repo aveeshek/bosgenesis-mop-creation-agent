@@ -15,6 +15,8 @@ no_secret_values: true
 no_production_data: true
 qdrant_lookup_status: "{{qdrant_lookup_status}}"
 qdrant_reference_count: {{qdrant_reference_count}}
+memory_context_status: "{{memory_context_status}}"
+memory_context_read_count: {{memory_context_read_count}}
 ---
 
 # Installation Notes: {{source_namespace}} to {{target_namespace}}
@@ -35,6 +37,7 @@ These notes are optimized for an autonomous LLM/agent executor. The executor mus
 - Run dry-run commands before real apply/install commands.
 - Treat inferred steps as requiring human confirmation.
 - Treat Qdrant references as prior guidance only, not current observed facts.
+- Treat memory context as prior non-secret generation context only, not current observed facts.
 
 ## 3. Required Human Inputs
 
@@ -65,6 +68,12 @@ evidence:
     count: {{qdrant_reference_count}}
     references:
 {{qdrant_references_yaml}}
+  memory_context:
+    status: "{{memory_context_status}}"
+    count: {{memory_context_read_count}}
+    authority: prior_context_only_not_current_fact
+    records:
+{{memory_context_yaml}}
 ```
 
 ## 5. Resource Inventory Summary

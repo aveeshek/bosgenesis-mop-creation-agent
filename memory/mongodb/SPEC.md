@@ -2,7 +2,7 @@
 
 ## Intent
 
-MongoDB may store flexible evidence bundles, episodic records, and intermediate reasoning records.
+MongoDB is not an active Phase 11 memory backend. It remains future scope for flexible non-secret evidence bundles or episodic records if a later phase accepts it.
 
 ## Boundary
 

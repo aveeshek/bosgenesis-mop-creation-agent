@@ -17,6 +17,7 @@ from bosgenesis_mop_creation_agent.config.settings import LlmSettings
 from bosgenesis_mop_creation_agent.llm.bounded_reasoning import build_bounded_reasoning
 from bosgenesis_mop_creation_agent.llm.models import BoundedReasoningResult, RepairSuggestionResult
 from bosgenesis_mop_creation_agent.llm.repair_suggester import build_repair_suggestions
+from bosgenesis_mop_creation_agent.memory.models import MemoryContext
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
 from bosgenesis_mop_creation_agent.reconstruction.models import (
     HelmReleasePlan,
@@ -83,6 +84,7 @@ class LocalArtifactWriter:
         inventory: NormalizedInventory | None = None,
         classification: ClassificationSummary | None = None,
         qdrant_references: ReferenceLookupResult | None = None,
+        memory_context: MemoryContext | None = None,
         snapshot_sources_attempted: list[str] | None = None,
         mcp_sources_attempted: list[str] | None = None,
     ) -> ArtifactWriteResult:
@@ -110,12 +112,16 @@ class LocalArtifactWriter:
             values_dir=values_dir,
         )
         reference_result = qdrant_references or ReferenceLookupResult()
+        safe_memory_context = memory_context or MemoryContext(
+            namespace_key=f"namespace:{source_namespace}"
+        )
         bounded_reasoning = build_bounded_reasoning(
             settings=self._llm_settings,
             reconstruction=reconstruction,
             classification=classification,
             correlation_id=correlation_id,
             prior_references=reference_result,
+            memory_context=safe_memory_context,
         )
         repair_suggestions = build_repair_suggestions(
             settings=self._llm_settings,
@@ -146,6 +152,7 @@ class LocalArtifactWriter:
             bounded_reasoning=bounded_reasoning,
             repair_suggestions=repair_suggestions,
             qdrant_references=reference_result,
+            memory_context=safe_memory_context,
             snapshot_sources_attempted=snapshot_sources_attempted or [],
             mcp_sources_attempted=mcp_sources_attempted or [],
             run_dir=run_dir,
@@ -202,6 +209,10 @@ class LocalArtifactWriter:
             "classification": _classification_manifest(classification),
             "reconstruction": _reconstruction_manifest(reconstruction),
             "qdrant_prior_references": reference_result.model_dump(mode="json"),
+            "memory": {
+                **safe_memory_context.model_dump(mode="json"),
+                "read_count": safe_memory_context.read_count,
+            },
             "bounded_llm_reasoning": bounded_reasoning.model_dump(mode="json"),
             "human_mop_pdf_renderer": pdf_result.metadata.model_dump(),
             "machine_execution_plan": _machine_execution_plan(
@@ -261,6 +272,7 @@ class LocalArtifactWriter:
         bounded_reasoning: BoundedReasoningResult,
         repair_suggestions: RepairSuggestionResult,
         qdrant_references: ReferenceLookupResult,
+        memory_context: MemoryContext,
         snapshot_sources_attempted: list[str],
         mcp_sources_attempted: list[str],
         run_dir: Path,
@@ -307,6 +319,9 @@ class LocalArtifactWriter:
             "target_namespace": request.target_namespace,
             "session_context_key": f"namespace:{source_namespace}",
             "memory_primary_key": f"namespace:{source_namespace}",
+            "memory_context_status": memory_context.status,
+            "memory_context_read_count": str(memory_context.read_count),
+            "memory_context_yaml": _memory_context_yaml(memory_context),
             "generation_mode": request.mode.value,
             "source_snapshot_id_or_timestamp": (
                 inventory.snapshot_id if inventory else request.source_snapshot_id
@@ -1339,6 +1354,30 @@ def _qdrant_references_yaml(result: ReferenceLookupResult) -> str:
                 confidence=reference.confidence,
                 matched_fields=", ".join(reference.matched_fields),
                 redaction_status=reference.redaction_status,
+            )
+        )
+    return "\n".join(blocks)
+
+
+def _memory_context_yaml(context: MemoryContext) -> str:
+    if not context.enabled:
+        return "  - memory_context: disabled"
+    if not context.records:
+        return f"  - memory_context: {context.status}"
+    blocks = []
+    for record in context.records[:5]:
+        blocks.append(
+            "  - memory_id: {memory_id}\n"
+            "    kind: {kind}\n"
+            "    authority: prior_context_only_not_current_fact\n"
+            "    confidence: {confidence}\n"
+            "    redaction_status: {redaction_status}\n"
+            "    summary: {summary}".format(
+                memory_id=record.memory_id,
+                kind=record.kind,
+                confidence=record.confidence,
+                redaction_status=record.redaction_status,
+                summary=yaml.safe_dump(record.summary, default_flow_style=True).strip(),
             )
         )
     return "\n".join(blocks)

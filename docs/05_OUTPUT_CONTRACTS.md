@@ -193,6 +193,9 @@ local_file_path
 mongo_saved
 qdrant_reference_count
 qdrant_lookup_status
+memory_status
+memory_read_count
+memory_written_count
 resource_count
 helm_release_count
 helm_managed_resource_count
@@ -405,6 +408,14 @@ Optional persisted records must include:
 - trace identifiers where available.
 
 Optional stores must receive redacted content only.
+
+Phase 11 memory records are optional store records. They must contain only
+non-secret summaries and must be labeled as prior context, not current facts.
+Generated API responses and `artifact.json` must expose memory status/read/write
+counts and per-backend status without exposing secret-bearing content.
+
+Redis durable memory stores short-term records only under `<key_prefix>:<namespace_key>:records`. PostgreSQL/pgvector durable
+memory stores episodic records only through the configured `MEMORY_PGVECTOR_DSN` and table, default `mop_agent_memory`. LangMem-shaped in-process memory stores enabled safe summary kinds for the running process. Qdrant and Letta memory adapters are disabled future scope.
 
 Qdrant retrieval records consumed by the agent must include:
 

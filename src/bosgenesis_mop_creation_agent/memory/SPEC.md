@@ -2,7 +2,7 @@
 
 ## Intent
 
-`memory/` defines runtime access to LangMem-backed memory and optional backing stores.
+`memory/` defines runtime access to LangMem-shaped memory and configured backing stores.
 
 ## Memory classes
 
@@ -28,14 +28,37 @@ active runtime namespace.
 
 ## Backing stores
 
-Future adapters may include:
+Implemented Phase 11 adapters:
 
-- Redis for short-term run state, cache, and idempotency locks.
-- PostgreSQL or pgvector for metadata and semantic search.
-- MongoDB for flexible non-secret episodic records.
-- ClickHouse for analytical run events.
-- LangMem as the abstraction layer.
-- Letta as future disabled adapter until explicitly enabled by later scope.
+- LangMem-shaped in-process adapter as the first/cache layer for safe short-term,
+  episodic, and knowledge summaries within the running agent process.
+- Redis durable short-term memory adapter, enabled by default when memory is
+  enabled, storing namespace-scoped JSON memory records in Redis lists.
+- PostgreSQL/pgvector durable episodic memory adapter, enabled by default when
+  memory is enabled, using `MEMORY_PGVECTOR_DSN` and creating the configured
+  memory table if missing.
+- Qdrant memory optional adapter placeholder, disabled by default for future
+  durable vector/knowledge memory wiring.
+- Letta disabled future adapter placeholder that always reports
+  `disabled_future_placeholder`.
+
+Implemented durable routing:
+
+- Redis stores short-term run state only. Keys must use
+  `<key_prefix>:<namespace_key>:records`, with `key_prefix` defaulting to
+  `mop-agent-memory`.
+- PostgreSQL/pgvector stores episodic generation memory only through
+  `MEMORY_PGVECTOR_DSN`; the adapter may create the `vector` extension when
+  available and creates the configured table if missing.
+- LangMem-shaped in-process memory is the first/cache layer and can hold safe
+  short-term, episodic, and knowledge summaries for the running process.
+
+Future adapter scope:
+
+- Qdrant memory collection for future durable namespace-scoped vector knowledge
+  summaries.
+- Letta as a future disabled adapter until explicitly enabled by later scope.
+- MongoDB or ClickHouse memory adapters only if a future phase accepts them.
 
 ## Stored content
 
@@ -47,6 +70,26 @@ Memory may store:
 - accepted installation patterns;
 - validation outcomes;
 - unknowns and human-input patterns.
+
+The current implementation stores only generated summary records. It must not
+store raw manifests, Helm values, prompts, LLM raw responses, database schemas,
+environment variables, logs, or raw evidence payloads.
+
+## Runtime behavior
+
+- Memory is disabled by default.
+- When enabled, generation reads prior namespace-scoped memory before snapshot
+  and reasoning work.
+- Prior memory is passed to bounded reasoning as advisory context only.
+- Generation writes short-term, episodic, and knowledge summary records after a
+  run completes artifact generation.
+- Memory read/write status must be logged with `run_id`, `correlation_id`, and
+  namespace key.
+- API responses must include memory status, read count, and written count.
+- Artifact manifests and installation notes must label memory as
+  `prior_context_only_not_current_fact`.
+- Redis must persist short-term records only.
+- PostgreSQL/pgvector must persist episodic records only.
 
 ## Safety
 

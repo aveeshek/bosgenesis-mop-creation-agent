@@ -19,6 +19,7 @@ dependencies = [
   "psycopg[binary]>=3.2",
   "pydantic>=2",
   "PyYAML>=6",
+  "redis>=5",
   "uvicorn[standard]>=0.27",
 ]
 

@@ -2,7 +2,7 @@
 
 ## Intent
 
-This repository defines the spec-driven skeleton for the BOS Genesis MoP Creation Agent.
+This repository defines and implements the spec-driven BOS Genesis MoP Creation Agent.
 
 The agent reads namespace-scoped evidence, reasons over installation provenance, and emits a human MoP PDF plus Markdown installation notes for agents.
 
@@ -21,9 +21,9 @@ The agent reads namespace-scoped evidence, reasons over installation provenance,
 - `bosgenesis-helm-manager-mcp` for Helm release, values, history, manifest, and repository evidence.
 - `bosgenesis-k8s-data-ingestion-agent` for normalized historical and analytical runtime evidence.
 - LangGraph for standalone workflow/state orchestration, with LangChain for model, prompt, and tool abstractions where useful.
-- LangMem for short-term, episodic, and knowledge memory.
+- LangMem-shaped in-process memory, Redis durable short-term memory, and PostgreSQL/pgvector durable episodic memory; Qdrant and Letta memory adapters remain disabled future scope.
 - Langfuse and SigNoz for traceability and observability.
 
-## Non-code constraint
+## Implementation constraint
 
-The initial scaffold contains Markdown specifications only. No executable code, dependency manifests, Helm templates, Kubernetes manifests, or scripts are included yet.
+The implementation must remain spec-driven. Behavioral changes should update the relevant `SPEC.md` and `docs/` contracts before or alongside code, chart, script, or artifact-template changes.

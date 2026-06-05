@@ -15,6 +15,7 @@ from bosgenesis_mop_creation_agent.llm.models import (
     ReasoningEnvelope,
     ReasoningFinding,
 )
+from bosgenesis_mop_creation_agent.memory.models import MemoryContext
 from bosgenesis_mop_creation_agent.llm.repair_suggester import _extract_json, _extract_model_content
 from bosgenesis_mop_creation_agent.reconstruction.models import ReconstructionPlan
 from bosgenesis_mop_creation_agent.retrieval.models import ReferenceLookupResult
@@ -31,13 +32,19 @@ def build_bounded_reasoning(
     classification: ClassificationSummary | None,
     correlation_id: str,
     prior_references: ReferenceLookupResult | None = None,
+    memory_context: MemoryContext | None = None,
     chat_model: ChatModel | None = None,
 ) -> BoundedReasoningResult:
     diagnostics = ReasoningDiagnostics(minimum_confidence=settings.minimum_confidence)
     if not settings.reasoning_enabled:
         return BoundedReasoningResult(enabled=False, status="disabled", diagnostics=diagnostics)
 
-    evidence_pack = _redacted_evidence_pack(reconstruction, classification, prior_references)
+    evidence_pack = _redacted_evidence_pack(
+        reconstruction,
+        classification,
+        prior_references,
+        memory_context,
+    )
     candidates = evidence_pack["candidates"]
     diagnostics.candidate_count = len(candidates)
     if not candidates:
@@ -140,6 +147,7 @@ def _redacted_evidence_pack(
     reconstruction: ReconstructionPlan,
     classification: ClassificationSummary | None,
     prior_references: ReferenceLookupResult | None,
+    memory_context: MemoryContext | None = None,
 ) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     for warning in reconstruction.warnings:
@@ -207,6 +215,29 @@ def _redacted_evidence_pack(
         },
         "candidates": candidates[:MAX_REASONING_CANDIDATES],
         "prior_references": references,
+        "memory_context": _memory_context_pack(memory_context),
+    }
+
+
+def _memory_context_pack(memory_context: MemoryContext | None) -> dict[str, Any]:
+    if memory_context is None or not memory_context.enabled:
+        return {"enabled": False, "status": "disabled", "records": []}
+    return {
+        "enabled": True,
+        "status": memory_context.status,
+        "namespace_key": memory_context.namespace_key,
+        "redaction_status": "non_secret_summary_only",
+        "records": [
+            {
+                "memory_id": record.memory_id,
+                "kind": record.kind,
+                "summary": record.summary[:500],
+                "labels": record.labels,
+                "confidence": record.confidence,
+                "redaction_status": record.redaction_status,
+            }
+            for record in memory_context.records[:5]
+        ],
     }
 
 
@@ -218,6 +249,7 @@ def _prompt(evidence_pack: dict[str, Any], minimum_confidence: float, correlatio
         "Authority order: Observed evidence > deterministic reconstruction > Qdrant prior references > "
         "LLM suggestion > human approval.\n"
         "Prior Qdrant references are examples only. They are not current observed facts.\n"
+        "Memory context is non-secret prior run context only. It is not current observed fact.\n"
         "Do not output executable YAML, kubectl manifests, Helm commands, secrets, or credentials.\n"
         "Return JSON only. Do not return markdown, prose, code fences, or thinking text.\n"
         "Focus on ambiguity detection, public Helm chart hints, install-order sanity, missing spec "

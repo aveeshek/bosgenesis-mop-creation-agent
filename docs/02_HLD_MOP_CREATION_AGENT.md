@@ -10,7 +10,7 @@
 
 The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes a production-readable paginated PDF from that same human MoP model. It also creates Markdown installation notes and a standalone machine execution YAML plan for autonomous execution by another LLM/agent. It uses the latest inventory captured by the Analytical MoP ETL Agent for the active source namespace and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to generate, inspect, and validate output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and LangMem-backed memory to reason about ambiguous next steps.
+The agent is non-deterministic by design. In Codex-integrated MCP mode, Codex can drive iterative reasoning and call the agent repeatedly to generate, inspect, and validate output. In standalone REST mode, the agent uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and optional Phase 11 memory to reason about ambiguous next steps.
 
 The configured source namespace is the startup default only. Operators may switch the active runtime source namespace through REST or MCP APIs. Generation requests may still provide an explicit per-run `source_namespace` override. The namespace identity `namespace:<active_source_namespace>` is the primary key for agentic memory and session context.
 
@@ -53,9 +53,9 @@ flowchart LR
     Obs --> SigNoz["SigNoz / OTel"]
 
     Orchestrator --> Memory["Memory Layer"]
-    Memory --> Redis[("Redis Optional")]
-    Memory --> PGV[("pgvector Optional")]
-    Memory --> LangMem["LangMem Optional"]
+    Memory --> Redis[("Redis Durable Short-Term")]
+    Memory --> PGV[("pgvector Durable Episodic")]
+    Memory --> LangMem["LangMem First/Cache"]
     Memory -. "disabled" .-> Letta["Letta Future Adapter"]
 ```
 
@@ -76,7 +76,7 @@ flowchart LR
 | Human MoP and Installation Notes Renderer | Generate sample-format human MoP content, paginated PDF output for human review, Markdown installation notes for agents, and standalone machine execution YAML. |
 | Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Generation-time Qdrant access remains read-only; optional Qdrant ingestion is a separate gated admin flow. |
 | Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
-| Memory Layer | Save and retrieve generation patterns, previous MoPs, template decisions, short-term run state, episodic memory, and knowledge memory keyed by `namespace:<source_namespace>`. |
+| Memory Layer | Read and write non-secret short-term, episodic, and knowledge summaries keyed by `namespace:<source_namespace>`; use LangMem-shaped memory first/cache, Redis as the default durable short-term backend, pgvector as the default durable episodic backend, and keep Qdrant/Letta disabled for future memory expansion. |
 
 ## 3. End-to-End Flow
 
@@ -95,6 +95,7 @@ sequenceDiagram
     C->>A: Optional GET/PUT /namespace, then POST /mop-creation/generate target_namespace
     A->>O: start trace
     A->>A: resolve source namespace from request override or active runtime namespace
+    A->>A: read safe namespace memory context if enabled
     A->>PG: read latest source namespace snapshot
     A->>CH: read analytical inventory if enabled
     A->>K: validate latest namespace summary/resources
@@ -109,6 +110,7 @@ sequenceDiagram
         A->>A: validate structured advisory findings and confidence gate output
     end
     A->>A: render sample-format human MoP, paginated PDF, Markdown notes, and machine plan YAML
+    A->>A: write non-secret memory summaries if enabled
     A->>A: write local file
     A->>M: save MoP metadata/document if enabled
     A->>O: end trace
@@ -202,9 +204,10 @@ flowchart TB
 | ClickHouse | Read analytical inventory and write generation metrics when enabled. |
 | MongoDB | Store full MoP document and raw generation trace. |
 | Qdrant | Read-only generation-time retrieval of existing vectorized MoP/installation-note references for matching components. Optional ingestion of completed redacted artifacts is admin-gated, user-confirmed, and never automatic during generation. |
-| Redis | Optional short-lived cache and idempotency lock. |
-| pgvector | Optional semantic search alternative. |
-| LangMem | Optional memory extraction/update around MoP patterns. |
+| LangMem | Phase 11 in-process first/cache adapter for non-secret run, episodic, and knowledge summaries. |
+| Redis | Implemented durable backend for short-term run memory using namespace-scoped list keys. |
+| pgvector | Implemented durable backend for episodic generation memory using the configured `MEMORY_PGVECTOR_DSN`; creates `mop_agent_memory` table if missing. |
+| Qdrant memory collection | Disabled placeholder for future durable knowledge/vector memory in `mop_agent_memory`, separate from prior-reference retrieval collections. |
 | Letta | Future disabled adapter and future memory-layer option. |
 
 ## 9. Observability Model

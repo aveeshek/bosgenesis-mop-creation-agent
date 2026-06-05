@@ -25,6 +25,9 @@ local artifact housekeeping.
 - Return summary and trace identifiers.
 - Keep in-memory run state for `accepted`, `generated`, and `failed` runs.
 - Keep runtime namespace state and namespace-derived memory/session context key.
+- Read prior namespace memory before generation work when memory is enabled.
+- Write non-secret generation summaries after artifact generation when memory is
+  enabled.
 - List, preview, download, and archive generated local artifacts.
 - Delete one MoP run or all local MoP artifacts with storage-root guardrails.
 - Optionally ingest completed redacted MoP artifacts into Qdrant through a config-gated admin flow. This must never be invoked by generation.
@@ -73,6 +76,10 @@ runtime active namespace is switched, future requests without explicit
 `source_namespace` must use that active namespace. Requests that include
 `source_namespace` are per-run overrides and must not mutate the runtime active
 namespace.
+
+Memory reads and writes must use the resolved source namespace key. Memory is
+advisory prior context only and must not change deterministic evidence,
+generated manifests, Helm commands, or approval state.
 
 Optional Qdrant ingestion sequence:
 

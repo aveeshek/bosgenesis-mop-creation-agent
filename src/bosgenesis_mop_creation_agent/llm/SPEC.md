@@ -128,9 +128,11 @@ The layer may evaluate:
 - confidence and rationale labels.
 
 The layer must receive only a redacted bounded evidence pack containing summary
-counts, gap candidates, evidence references, and redacted Qdrant citations. It
-must not receive raw Secret values, production data, unredacted manifests, table
-rows, connection strings, or credentials.
+counts, gap candidates, evidence references, redacted Qdrant citations, and
+optional non-secret memory summaries. Memory context is prior run context only;
+it is not current observed evidence. The layer must not receive raw Secret
+values, production data, unredacted manifests, table rows, connection strings,
+or credentials.
 
 The response must validate against `ReasoningEnvelope`. Accepted findings must
 be written only as advisory artifact metadata and rendered guidance:

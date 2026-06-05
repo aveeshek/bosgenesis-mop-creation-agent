@@ -39,6 +39,11 @@ Namespace-aware responses must expose `session_context_key` so downstream
 memory, LangGraph/LangChain flows, and Codex can bind run context to the active
 source namespace.
 
+Memory-aware responses must expose `memory_status`, `memory_read_count`, and
+`memory_written_count`. These fields summarize safe memory operations only and
+must not expose stored memory text unless it appears in governed artifacts with
+`prior_context_only_not_current_fact` labeling.
+
 ## Artifact models
 
 Artifact models must represent:

@@ -54,4 +54,6 @@ continues with deterministic output and a warning.
 
 ## Memory usage
 
-Reasoning may retrieve and store non-secret summaries through LangMem-backed short-term, episodic, and knowledge memory.
+Reasoning may retrieve and store non-secret summaries through the Phase 11
+memory layer. Memory context is prior context only and must not override current
+evidence or generate executable truth.

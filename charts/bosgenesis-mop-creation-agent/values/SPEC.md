@@ -2,7 +2,7 @@
 
 ## Intent
 
-This folder will define future value override guidance.
+This folder defines value override guidance for chart configuration.
 
 ## Configuration groups
 

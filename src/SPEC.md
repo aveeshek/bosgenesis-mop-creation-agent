@@ -2,7 +2,7 @@
 
 ## Intent
 
-`src/` will contain the future Python implementation of `bosgenesis-mop-creation-agent`.
+`src/` contains the Python implementation of `bosgenesis-mop-creation-agent`.
 
 The source tree must implement a read-only, non-executing, evidence-grounded MoP creation runtime that produces two primary artifacts:
 
@@ -11,7 +11,7 @@ The source tree must implement a read-only, non-executing, evidence-grounded MoP
 
 ## Package
 
-The future package name is:
+The package name is:
 
 ```text
 bosgenesis_mop_creation_agent
@@ -40,7 +40,7 @@ bosgenesis_mop_creation_agent
 - `llm/`: external model access boundary.
 - `langgraph/`: standalone autonomous reasoning graph and state transitions.
 - `langchain/`: model, prompt, and tool abstractions used by standalone reasoning.
-- `memory/`: LangMem and backing memory stores.
+- `memory/`: LangMem-shaped in-process memory, Redis short-term memory, PostgreSQL/pgvector episodic memory, and disabled future Qdrant/Letta adapters.
 - `documents/`: human MoP PDF and Markdown installation notes rendering.
 - `application/`: application-mode schema/topology metadata.
 - `validation/`: artifact and plan validation gates.
@@ -56,4 +56,4 @@ No source module may persist or emit secret values, production data, unredacted 
 
 ## Current constraint
 
-No source code is present in this scaffold. Future implementation should be added only after these module contracts are reviewed.
+Source code is now present and must continue to follow these module contracts. Future implementation should update the relevant `SPEC.md` files before or alongside behavioral changes.
