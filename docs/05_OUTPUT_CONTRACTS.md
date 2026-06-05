@@ -46,12 +46,12 @@ The professional PDF must not include the removed `Kubernetes Topology View` or 
 | Access and Environment Verification | Copyable commands to confirm Kubernetes/Helm context and target namespace readiness. |
 | Pre-change Backup | Export/reference source manifests, Helm values, and evidence snapshots without exposing secrets. |
 | Stakeholder Notification | Placeholder notification text for start, rollback, and completion messages. |
-| Deployment Execution | Target namespace preparation, secret placeholders, Helm releases, raw Kubernetes resources, ingress, and application schema steps when selected. |
-| Validation Steps | Pod, deployment, service, ingress, Helm, PVC, and application-mode validation checks as applicable. |
+| Deployment Execution | Target namespace preparation, secret placeholders, Helm releases, raw Kubernetes resources, and ingress. Future/backlog application schema steps may be added when application mode is reactivated. |
+| Validation Steps | Pod, deployment, service, ingress, Helm, and PVC validation checks. Future/backlog application-mode validation checks may be added when application mode is reactivated. |
 | Validation and Evidence Matrix | Human-readable evidence source rows plus ordered copy-pasteable validation commands from the `validate` phase of `machine_execution_plan`; raw YAML/JSON dumps and internal MCP reference lists are not allowed in this human section. |
 | Appendix A - Resource List Snapshot | Grouped tables for Helm releases and Kubernetes resource kinds, including deployments, statefulsets, daemonsets, services, ingresses, configmaps, PVCs, jobs, cronjobs, pods, warning-only items, and excluded resources when present. |
 | Go/No-Go Decision Points | Explicit stop/continue checkpoints and failed-action guidance. |
-| Rollback Procedure | Helm uninstall, raw manifest delete, and cautious application-mode cleanup guidance. |
+| Rollback Procedure | Helm uninstall and raw manifest delete guidance. Future/backlog application-mode cleanup guidance must be cautious and manual-review-first when reactivated. |
 | Post-change Activities | Documentation, trace/artifact retention, and handoff notes. |
 | Execution Log | Blank operator-fillable execution table. |
 | Footer | MoP generation metadata including source namespace, target namespace, run ID, and correlation ID. |
@@ -218,6 +218,8 @@ artifacts.run_directory_path
 
 Optional stores may fail without failing the run, but local storage failure must fail the request.
 
+The artifact manifest must include an `observability` object with `schema_version`, `trace_ids`, `sinks`, `service_details`, `context`, `phase_metrics`, `phase_latency_ms`, `warning_taxonomy`, `audit_events`, `audit_event_count`, and `redaction_status`. `service_details` records redacted non-secret endpoint metadata such as the Langfuse web endpoint and SigNoz OTLP collector endpoint. `sinks` records whether Langfuse and SigNoz export is enabled, disabled, missing credentials, missing SDK packages, or failed configuration/export. Audit events must cover request receipt, memory read/write, snapshot selection, MCP enrichment, classification, Qdrant lookup, rendering, generated-step evidence/inference validation, LLM reasoning metadata, warning taxonomy, and response generation. Raw prompts, raw model responses, manifests, Qdrant excerpts, credentials, and production data are not allowed in observability payloads.
+
 The classification summary must be available in the generation response and through:
 
 ```text
@@ -372,7 +374,7 @@ Every generated step must be grounded by at least one of:
 - Helm Manager MCP evidence;
 - Data Ingestion Agent evidence;
 - Qdrant prior MoP/installation-note references for matching components, when available;
-- application-mode metadata evidence;
+- future/backlog application-mode metadata evidence when application mode is reactivated;
 - explicitly labeled inference with confidence and rationale.
 
 Evidence references must appear in the appendix or inline where useful.

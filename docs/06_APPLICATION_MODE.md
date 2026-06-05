@@ -1,19 +1,19 @@
 # Application Mode Specification
 
-**Document status:** Initial scaffold  
+**Document status:** Deferred/backlog; Phase 12 skipped for now
 **Generation mode:** `application`
 
 ## 1. Intent
 
-Application mode augments `platform-only` Kubernetes and Helm reconstruction with metadata-only schema and topology inference for databases, caches, brokers, and application-level dependencies.
+Application mode is a deferred/backlog generation mode. It is not part of the current active implementation plan because Phase 12 is intentionally skipped for now. When reactivated, it will augment `platform-only` Kubernetes and Helm reconstruction with metadata-only schema and topology inference for databases, caches, brokers, and application-level dependencies.
 
-Application mode is still a document-generation mode. The agent does not execute schema creation, copy data, mutate target systems, or perform migrations.
+When reactivated, application mode remains a document-generation mode. The agent does not execute schema creation, copy data, mutate target systems, or perform migrations.
 
-In standalone mode, application-mode reasoning may use LangGraph/LangChain and the configured external LLM to infer schema/topology recreation guidance from redacted evidence. In Codex-integrated mode, Codex may iteratively refine the same guidance through the MCP surface.
+When this backlog mode is reactivated, standalone application-mode reasoning may use LangGraph/LangChain and the configured external LLM to infer schema/topology recreation guidance from redacted evidence. In Codex-integrated mode, Codex may iteratively refine the same guidance through the MCP surface.
 
 ## 2. Scope
 
-Application mode includes:
+Future application mode includes:
 
 - all `platform-only` output;
 - schema/topology discovery where approved evidence is available;
@@ -22,7 +22,7 @@ Application mode includes:
 - validation commands or checks;
 - manual rollback guidance.
 
-Application mode excludes:
+Future application mode excludes:
 
 - table rows;
 - MongoDB documents;
@@ -45,7 +45,7 @@ Application mode excludes:
 
 ## 4. Evidence Sources
 
-Application-mode evidence may come from:
+Future application-mode evidence may come from:
 
 - explicitly provided read-only credentials;
 - approved MCP/data-ingestion boundaries;
@@ -89,11 +89,11 @@ if mode == "application":
         never generate executable DDL, broker commands, or cache commands as final truth
 ```
 
-Application metadata collection must happen after namespace/platform classification so the agent can associate schemas and topics with Kubernetes workloads where evidence supports that relationship.
+When reactivated, application metadata collection must happen after namespace/platform classification so the agent can associate schemas and topics with Kubernetes workloads where evidence supports that relationship.
 
 ## 7. Output Requirements
 
-The generated human MoP artifacts and Markdown installation notes must include application schema/topology recreation guidance when application mode is selected. In the human MoP content this guidance belongs under `Deployment Execution`, `Validation`, `Go / No-Go`, and `Rollback Procedure` as appropriate; in the Markdown notes it may be a dedicated execution phase and must be represented in the machine execution plan when it is actionable.
+When application mode is reactivated, generated human MoP artifacts and Markdown installation notes must include application schema/topology recreation guidance when application mode is selected. In the human MoP content this guidance belongs under `Deployment Execution`, `Validation`, `Go / No-Go`, and `Rollback Procedure` as appropriate; in the Markdown notes it may be a dedicated execution phase and must be represented in the machine execution plan when it is actionable.
 
 That section must include:
 
@@ -133,7 +133,7 @@ If a schema/topology item is inferred from Kubernetes configuration rather than 
 
 ## 10. Validation Requirements
 
-Application-mode validation must check:
+Future application-mode validation must check:
 
 - no production data in artifacts;
 - no secret-like values in artifacts;

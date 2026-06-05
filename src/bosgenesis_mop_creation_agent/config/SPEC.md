@@ -49,6 +49,15 @@ memory.redis.enabled = true
 memory.pgvector.enabled = true
 memory.qdrant.enabled = false
 memory.letta.enabled = false
+observability.langfuse_enabled = true
+observability.langfuse_endpoint = http://langfuse-web.bosgenesis.svc.cluster.local:3000
+observability.langfuse_public_key = optional secret-provided key
+observability.langfuse_secret_key = optional secret-provided key
+observability.signoz_enabled = true
+observability.otlp_endpoint = http://signoz-otel-collector.signoz.svc.cluster.local:4317
+observability.audit_enabled = true
+observability.phase_metrics_enabled = true
+observability.warning_taxonomy_enabled = true
 ```
 
 `agent.source_namespace` is the configured default source namespace. Runtime
@@ -62,6 +71,13 @@ namespace-scoped list keys. PostgreSQL/pgvector is the implemented durable
 episodic memory backend using `MEMORY_PGVECTOR_DSN` and the configured memory
 table. Qdrant/Letta remain disabled future memory placeholders until their
 durable wiring is explicitly enabled.
+
+`observability.*` settings control Phase 13 audit hardening. Audit, phase latency metrics, and warning taxonomy are enabled by default. SigNoz/OpenTelemetry exports phase spans to the configured OTLP collector when exporter packages are available. Langfuse emits redacted reasoning metadata when endpoint and public/secret keys are configured. Both sinks must degrade to sink status metadata when SDK/runtime wiring or credentials are unavailable. The lab Langfuse service endpoint is `http://langfuse-web.bosgenesis.svc.cluster.local:3000`; the SigNoz OTLP endpoint is `http://signoz-otel-collector.signoz.svc.cluster.local:4317`.
+
+Credential update procedures for PostgreSQL, ClickHouse, Redis, Qdrant,
+Langfuse, SigNoz/OpenTelemetry, MCP endpoints, and LLM endpoints are maintained
+in `docs/CREDENTIALS.md`. Tracked config must keep placeholder or non-secret
+values only.
 
 `llm.default_model` selects the active profile. Switching among supported models
 should require only a config value change, for example `gemma4:26b`, `gpt-4.1-mini`,

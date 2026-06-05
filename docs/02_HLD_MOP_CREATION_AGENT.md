@@ -72,10 +72,10 @@ flowchart LR
 | Resource Classifier | Split resources into Helm-managed, raw Kubernetes, excluded, and warning-only categories. |
 | Manifest Normalizer | Remove runtime metadata, redact sensitive fields, and rewrite namespace references for the target namespace. |
 | Qdrant Retrieval Layer | Read existing vectorized MoP/installation notes for discovered components when enabled; return cited prior references or skip when no match exists. |
-| Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then optional bounded LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, required human inputs, and application-mode metadata guidance. LLM output is advisory only and cannot mutate executable artifacts. |
+| Reasoning Layer | Use deterministic rules first, Qdrant prior references as non-authoritative guidance, then optional bounded LLM reasoning for ambiguous installation order, missing public repo/chart details, values reconstruction, unknowns, and required human inputs. Application-mode metadata guidance is deferred/backlog. LLM output is advisory only and cannot mutate executable artifacts. |
 | Human MoP and Installation Notes Renderer | Generate sample-format human MoP content, paginated PDF output for human review, Markdown installation notes for agents, and standalone machine execution YAML. |
 | Persistence Layer | Save to local file, MongoDB, and metadata stores when enabled. Generation-time Qdrant access remains read-only; optional Qdrant ingestion is a separate gated admin flow. |
-| Observability Layer | Emit Langfuse and SigNoz traces, structured logs, and generation metrics. |
+| Observability Layer | Emit redacted structured audit logs, phase latency metrics, warning taxonomy, Langfuse reasoning metadata, optional OpenTelemetry/SigNoz spans, and durable observability metadata in `artifact.json`. |
 | Memory Layer | Read and write non-secret short-term, episodic, and knowledge summaries keyed by `namespace:<source_namespace>`; use LangMem-shaped memory first/cache, Redis as the default durable short-term backend, pgvector as the default durable episodic backend, and keep Qdrant/Letta disabled for future memory expansion. |
 
 ## 3. End-to-End Flow
@@ -127,7 +127,7 @@ Runtime invocation:
 Generation:
 
 - `platform-only`: Kubernetes and Helm resources only.
-- `application`: platform-only plus metadata-only schema/topology guidance for PostgreSQL, ClickHouse, Redis, MongoDB, Kafka, and similar approved targets.
+- `application`: backlog/deferred mode for future metadata-only schema/topology guidance for PostgreSQL, ClickHouse, Redis, MongoDB, Kafka, and similar approved targets. Phase 12 is skipped for now.
 
 ## 5. Existing MCP Integration
 

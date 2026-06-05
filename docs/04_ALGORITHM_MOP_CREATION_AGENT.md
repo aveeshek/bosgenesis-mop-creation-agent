@@ -10,7 +10,7 @@
 
 The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived template and writes a production-readable paginated PDF from the rendered human MoP markdown. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured LLM profile are used where useful to infer ambiguous next steps, dependency order, unknowns, and application-mode guidance.
+The reasoning loop is non-deterministic when needed. Deterministic evidence handling runs first; LangGraph coordinates standalone workflow state and repair loops, while LangChain and the configured LLM profile are used where useful to infer ambiguous next steps, dependency order, and unknowns. Application-mode guidance is deferred/backlog because Phase 12 is skipped for now.
 
 ## 1. Core Algorithm
 
@@ -432,9 +432,9 @@ kubectl apply -f generated/<kind>-<name>.yaml -n <target-namespace> --dry-run=se
 kubectl apply -f generated/<kind>-<name>.yaml -n <target-namespace>
 ```
 
-## 10. Application Mode Algorithm
+## 10. Application Mode Algorithm - Backlog
 
-Application mode runs after platform inventory is merged and classified.
+Application mode is deferred/backlog. The following algorithm is retained as future design context only and must not be treated as active Phase 12 implementation scope.
 
 ```text
 if mode == "application":
@@ -455,7 +455,7 @@ Initial supported targets:
 - Redis keyspace pattern summary.
 - Kafka brokers and topics.
 
-Application mode must not copy table rows, MongoDB documents, Kafka messages, Redis values, uploaded files, or any production data.
+When application mode is later implemented, it must not copy table rows, MongoDB documents, Kafka messages, Redis values, uploaded files, or any production data.
 
 ## 11. Non-Deterministic Reasoning Algorithm
 
@@ -491,7 +491,7 @@ function write_namespace_memory(namespace_key, run_summary):
     return memory write status and backend_status; do not return refined plan from memory writes
 ```
 
-LLM reasoning must never receive secret values or production data. Every prompt, response, inference, and validation result must be traced in Langfuse and correlated with SigNoz/OpenTelemetry spans.
+LLM reasoning must never receive secret values or production data. Reasoning observability must record metadata only: attempted status, parser status, candidate counts, accepted/rejected counts, confidence gates, LangGraph use, and correlation IDs. Raw prompts, raw responses, manifests, Qdrant excerpts, and credentials must not be persisted in Langfuse, SigNoz, logs, or artifacts.
 
 ## 12. Human MoP and Installation Notes Rendering Algorithm
 
@@ -543,8 +543,8 @@ The current PDF output is produced by the Phase 7 professional renderer. It is g
 7. Apply raw services.
 8. Apply deployments, statefulsets, daemonsets, jobs, and cronjobs.
 9. Apply ingresses last.
-10. Run application-mode schema recreation steps when selected.
-11. Validate pods, deployments, services, ingress, Helm release status, and application schemas.
+10. Backlog only: run application-mode schema recreation steps when a future phase reactivates this mode.
+11. Validate pods, deployments, services, ingress, and Helm release status. Application schema validation is backlog/future.
 
 ## 14. Go/No-Go Logic
 
@@ -558,7 +558,7 @@ The current PDF output is produced by the Phase 7 professional renderer. It is g
 | Rollout health | Desired replicas ready | Stop and investigate. |
 | Service endpoints | Endpoints populated | Stop and investigate. |
 | Ingress created | Host/path visible | Validate ingress controller. |
-| Application schema validation | Expected schemas/topics exist | Stop and investigate metadata recreation. |
+| Application schema validation | Backlog/future: expected schemas/topics exist | Stop and investigate metadata recreation when application mode is reactivated. |
 
 ## 15. Rollback Generation Algorithm
 
@@ -582,7 +582,7 @@ For namespace-level cleanup only if the target namespace was newly created and a
 kubectl delete namespace <target-namespace>
 ```
 
-Application-mode rollback must describe schema/topic cleanup cautiously and should default to manual review.
+When application mode is reactivated, rollback must describe schema/topic cleanup cautiously and should default to manual review.
 
 ## 16. Artifact Validation Algorithm
 
@@ -594,7 +594,7 @@ function validate_artifact(mop_markdown, manifests, target_namespace):
     assert generated manifests use target_namespace
     assert excluded resources are not emitted as executable apply commands
     assert unknown chart references are marked
-    assert application mode contains metadata only
+    assert application mode contains metadata only when future backlog mode is reactivated
     assert human MoP content contains sample-derived required sections
     assert paginated PDF is present and renderer metadata reports page count and overflow diagnostics
     assert professional PDF section order has 11 sections and excludes removed topology/dependency sections
@@ -647,34 +647,31 @@ Preview is intentionally bounded for quick inspection. Download and archive endp
 ```mermaid
 sequenceDiagram
     participant A as Agent
+    participant O as ObservabilityService
     participant L as Langfuse
-    participant S as SigNoz
+    participant S as SigNoz/OTel
+    participant F as artifact.json
 
-    A->>L: trace generate_mop
-    A->>S: span generate_mop
-    A->>L: span read_snapshot
-    A->>S: span read_snapshot
-    A->>L: span mcp_enrichment
-    A->>S: span mcp_enrichment
-    A->>L: span classify_resources
-    A->>S: span classify_resources
-    A->>L: span qdrant_reference_lookup
-    A->>S: span qdrant_reference_lookup
-    A->>L: span normalize_manifests
-    A->>S: span normalize_manifests
-    A->>L: span llm_reasoning if needed
-    A->>S: span llm_reasoning if needed
-    A->>L: span render_mop_pdf
-    A->>S: span render_mop_pdf
-    A->>L: span render_installation_notes
-    A->>S: span render_installation_notes
-    A->>L: span persist_mop
-    A->>S: span persist_mop
-    A->>L: close trace with status
-    A->>S: close root span
+    A->>O: start run with trace IDs and correlation IDs
+    A->>O: phase span memory_read
+    A->>O: phase span read_latest_snapshot
+    A->>O: audit snapshot source status
+    A->>O: phase span enrich_from_mcp
+    A->>O: audit governed MCP calls
+    A->>O: phase span classify_resources
+    A->>O: phase span qdrant_reference_lookup
+    A->>O: audit read-only Qdrant result
+    A->>O: phase span render_artifacts
+    A->>O: audit rendering metadata
+    A->>O: audit generated-step evidence/inference validation
+    A->>O: phase span memory_write
+    A->>O: classify warnings into taxonomy
+    O->>L: emit reasoning metadata only when enabled
+    O->>S: emit phase spans when SDK/runtime wiring exists
+    O->>F: write sinks, phase metrics, audit events, and warning taxonomy
 ```
 
-Every phase event must carry `run_id`, `correlation_id`, source namespace, target namespace, generation mode, caller, phase, status, latency, and error details when present.
+Every phase event must carry `run_id`, `correlation_id`, source namespace, target namespace, generation mode, caller, phase, status, latency, redaction status, and error details when present. Optional observability sink failures must not fail generation; they must be captured as sink status or warnings.
 
 ## 18. Failure Algorithm
 

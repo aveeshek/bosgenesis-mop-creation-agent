@@ -12,7 +12,7 @@
 
 The agent is not an executor. It creates a safe, line-by-line human MoP artifact using the approved sample MoP format, with commands, expected outputs, validation checkpoints, rollback notes, and execution log sections. The current implementation writes the human MoP content and a production-readable paginated PDF rendered from the same sample-derived template. It also creates LLM/agent-readable Markdown installation notes and a standalone machine execution YAML plan so another agent can autonomously recreate the target environment. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent is non-deterministic by design. When deterministic evidence is incomplete, it may use LLM reasoning to infer next steps, dependency order, public repository references, chart/value reconstruction, schema recreation guidance, and unknowns. Inferred content must be labeled and traceable.
+The agent is non-deterministic by design. When deterministic evidence is incomplete, it may use LLM reasoning to infer next steps, dependency order, public repository references, chart/value reconstruction, and unknowns. Inferred content must be labeled and traceable. Application-mode schema recreation guidance is deferred to backlog and must not be treated as current Phase 12 scope.
 
 ## 1. Product Goal
 
@@ -47,10 +47,10 @@ The generated human MoP content must allow a human operator to recreate source n
 - Run as standalone REST-triggered autonomous agent when Codex is not driving the reasoning loop.
 - Use LangGraph with LangChain and a configured LLM profile for standalone reasoning.
 - Support `platform-only` mode for Kubernetes and Helm recreation steps.
-- Support `application` mode for metadata-only schema/topology recreation guidance.
+- Keep `application` mode as a defined but deferred/backlog contract for metadata-only schema/topology recreation guidance; Phase 12 implementation is skipped for now.
 - Store MoP metadata and content in MongoDB when enabled.
 - Store execution/request metadata in PostgreSQL/ClickHouse when enabled.
-- Emit traces to Langfuse and OpenTelemetry/SigNoz when enabled.
+- Emit structured audit events, phase latency metrics, warning taxonomy, Langfuse reasoning metadata, and OpenTelemetry/SigNoz spans when enabled.
 - Use LangMem-shaped in-process memory, Redis durable short-term memory, and PostgreSQL/pgvector durable episodic memory when Phase 11 memory is enabled.
 - Use agentic memory classes including short-term, episodic, and knowledge memory.
 - Return generated run directory, artifact manifest, human MoP path, PDF path, Markdown installation notes path, machine plan path, and optionally notes content to caller/Codex.
@@ -98,10 +98,10 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-14 | Write human MoP, PDF, Markdown installation notes, machine plan YAML, generated manifests, values files, evidence, and artifact manifest to local file storage. |
 | FR-15 | Store MoP and installation notes documents in MongoDB when enabled. |
 | FR-16 | Read Qdrant for existing vectorized MoP/installation-note references for relevant components when enabled, and skip gracefully when no matches exist. |
-| FR-17 | Emit Langfuse trace when enabled. |
-| FR-18 | Emit OpenTelemetry traces to SigNoz when enabled. |
+| FR-17 | Emit Langfuse reasoning metadata traces when enabled, without raw prompt or response text. |
+| FR-18 | Emit OpenTelemetry/SigNoz phase spans when enabled and SDK/runtime wiring is available; record sink status when unavailable. |
 | FR-19 | Return generated file metadata and optional content to caller. |
-| FR-20 | Support `application` mode metadata-only schema/topology output for PostgreSQL, ClickHouse, MongoDB, Redis, and Kafka where approved evidence exists. |
+| FR-20 | Backlog: support `application` mode metadata-only schema/topology output for PostgreSQL, ClickHouse, MongoDB, Redis, and Kafka where approved evidence exists. Phase 12 is skipped for now. |
 | FR-21 | Validate generated artifacts for secret leakage, namespace rewrite, blocked resources, production data leakage, and required sections before publication. |
 | FR-22 | Support standalone REST-triggered reasoning using LangGraph/LangChain, a configured LLM profile, and optional Phase 11 memory. |
 | FR-22a | Support optional Phase 11 memory reads/writes using `namespace:<source_namespace>` with non-secret short-term, episodic, and knowledge summaries. |
@@ -124,7 +124,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | NFR-9 | Must support configuration-driven enable/disable for PostgreSQL, ClickHouse, MongoDB, read-only Qdrant retrieval, Langfuse, SigNoz, Redis, pgvector, LangMem, and Letta-disabled adapter. |
 | NFR-10 | Must label inferred or unknown installation details instead of presenting them as observed facts. |
 | NFR-11 | Must never copy production data in platform-only or application mode. |
-| NFR-12 | Must record every tool call, reasoning decision, generated step, and validation result with `run_id`, `correlation_id`, and trace context. |
+| NFR-12 | Must record every phase, MCP call summary, Qdrant lookup, reasoning decision, generated-step evidence check, validation result, rendering decision, memory read/write, and response result with `run_id`, `correlation_id`, and trace context. |
 | NFR-13 | Must keep generation-time Qdrant access read-only; Qdrant ingestion must be explicit, gated, and outside the generation flow. |
 
 ## 5. Runtime Modes
@@ -150,9 +150,9 @@ application
 ```
 
 - `platform-only`: generate Kubernetes and Helm recreation steps only.
-- `application`: include platform-only output plus metadata-only schema/topology recreation guidance for supported databases, caches, and streams.
+- `application`: backlog/deferred mode. It remains part of the long-term contract, but Phase 12 implementation is skipped for now; current generation should be treated as `platform-only` unless a future phase reactivates application mode.
 
-Application mode must not export rows, documents, messages, cache values, files, or other production data.
+When application mode is later implemented, it must not export rows, documents, messages, cache values, files, or other production data.
 
 ## 7. API Contract
 
@@ -309,6 +309,15 @@ The classification endpoint returns a safety/classification audit summary with c
 
 ## 9. Configuration
 
+Credential operations are defined in `docs/CREDENTIALS.md`. Tracked Helm values
+must contain only non-secret defaults such as service endpoints, enablement
+flags, ports, collection names, and table names. Real credentials and sensitive
+DSNs must be supplied through the ignored
+`charts/bosgenesis-mop-creation-agent/values.credentials.yaml` file, an external
+secure values file passed with `HELM_VALUES_FILE`, or an equivalent secret
+manager integration. `/config/effective`, generated artifacts, logs, Langfuse
+metadata, and SigNoz span attributes must redact credential-like values.
+
 ```yaml
 agent:
   name: bosgenesis-mop-creation-agent
@@ -354,11 +363,15 @@ retrieval:
     ingestion_vector_size: 384
 
 observability:
-  langfuse:
-    enabled: true
-  signoz:
-    enabled: true
-    otlp_endpoint: http://signoz-otel-collector.signoz:4317
+  langfuse_enabled: true
+  langfuse_endpoint: http://langfuse-web.bosgenesis.svc.cluster.local:3000
+  langfuse_public_key: secret-provided
+  langfuse_secret_key: secret-provided
+  signoz_enabled: true
+  otlp_endpoint: http://signoz-otel-collector.signoz.svc.cluster.local:4317
+  audit_enabled: true
+  phase_metrics_enabled: true
+  warning_taxonomy_enabled: true
 
 memory:
   enabled: false
@@ -422,7 +435,7 @@ The Markdown installation notes must include structured metadata, execution phas
 - Helm commands should include `--dry-run` before real install/upgrade.
 - Generated manifests must remove runtime metadata: `uid`, `resourceVersion`, `managedFields`, `creationTimestamp`, `generation`, `ownerReferences`, and `status`.
 - Generated manifests must rewrite namespace to target namespace.
-- Application mode must recreate schemas/topology only, not data.
+- Backlog application mode, when implemented later, must recreate schemas/topology only, not data.
 - Qdrant references must be treated as prior guidance only, never as current observed namespace facts.
 - The agent must not execute generated commands.
 
@@ -435,8 +448,8 @@ The Markdown installation notes must include structured metadata, execution phas
 | AC-3 | Human MoP content and a paginated PDF are written to local storage. |
 | AC-4 | If MongoDB is enabled, MoP is stored in MongoDB. |
 | AC-5 | If Qdrant retrieval is enabled, matching prior MoP/installation-note references are cited when available and skipped with a warning when unavailable. |
-| AC-6 | If Langfuse is enabled, trace is visible. |
-| AC-7 | If SigNoz is enabled, OTel spans are visible. |
+| AC-6 | If Langfuse is enabled, reasoning metadata trace status is recorded without raw prompt/response text. |
+| AC-7 | If SigNoz is enabled and OTel SDK/runtime wiring exists, phase spans are emitted; artifact metadata records sink status either way. |
 | AC-8 | MoP includes Helm and raw Kubernetes sections when data exists. |
 | AC-9 | MoP excludes or masks sensitive resources. |
 | AC-10 | MoP contains copyable commands and expected outputs. |
@@ -444,7 +457,7 @@ The Markdown installation notes must include structured metadata, execution phas
 | AC-10b | Professional PDF validation content is human-readable and copy-pasteable, not raw YAML or JSON. |
 | AC-11 | Agent does not execute generated commands. |
 | AC-12 | Generated manifests use the target namespace and omit runtime metadata. |
-| AC-13 | Application mode includes only metadata/schema/topology and no production data. |
+| AC-13 | Backlog: future application mode includes only metadata/schema/topology and no production data. Current active scope is platform-only. |
 | AC-14 | Artifact validation fails publication if secret-like values are detected. |
 | AC-15 | Markdown installation notes and standalone machine execution YAML are generated alongside the human MoP artifacts. |
 | AC-16 | Standalone REST mode can use LangGraph/LangChain, configured LLM, and optional Phase 11 memory without Codex. |

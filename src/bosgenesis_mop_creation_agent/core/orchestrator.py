@@ -20,6 +20,7 @@ from bosgenesis_mop_creation_agent.mcp_clients.data_ingestion_client import Data
 from bosgenesis_mop_creation_agent.mcp_clients.enrichment import McpEnrichmentService
 from bosgenesis_mop_creation_agent.mcp_clients.helm_manager_client import HelmManagerClient
 from bosgenesis_mop_creation_agent.mcp_clients.k8s_inspector_client import K8sInspectorClient
+from bosgenesis_mop_creation_agent.observability import ObservabilityService
 from bosgenesis_mop_creation_agent.rendering.artifact_writer import LocalArtifactWriter
 from bosgenesis_mop_creation_agent.retrieval.reference_lookup import ReferenceLookupService
 from bosgenesis_mop_creation_agent.sources.clickhouse_snapshot_reader import ClickHouseSnapshotReader
@@ -47,6 +48,7 @@ class MoPCreationOrchestrator:
         )
         self._reference_lookup = ReferenceLookupService(settings.retrieval.qdrant)
         self._memory = AgentMemoryService(settings.memory)
+        self._observability = ObservabilityService(settings.observability)
         self._responses: dict[str, MoPGenerationResponse] = {}
         self._classifications: dict[str, ClassificationSummary] = {}
         self._latest_mop_id: str | None = None
@@ -171,56 +173,184 @@ class MoPCreationOrchestrator:
     ) -> MoPGenerationResponse:
         warnings: list[str] = []
         namespace_key = _session_context_key(source_namespace)
-        memory_context = self._memory.read_context(
-            namespace_key=namespace_key,
-            correlation_id=correlation_id,
-            run_id=run_id,
-        )
-        warnings.extend(memory_context.warnings)
-        snapshot_result = self._snapshot_selector.read(source_namespace, request.source_snapshot_id)
-        warnings.extend(snapshot_result.warnings)
-        enrichment_result = self._mcp_enrichment.enrich(
-            namespace=source_namespace,
-            correlation_id=correlation_id,
-            snapshot_inventory=snapshot_result.inventory,
-        )
-        warnings.extend(enrichment_result.warnings)
-        inventory = enrichment_result.inventory
-        classification = classify_inventory(inventory)
-        if classification:
-            warnings.extend(classification.warnings)
-        reference_result = self._reference_lookup.lookup(
-            inventory=inventory,
-            classification=classification,
-        )
-        artifact_result = self._artifact_writer.write(
+        observability = self._observability.start_run(
             mop_id=mop_id,
             run_id=run_id,
             correlation_id=correlation_id,
             source_namespace=source_namespace,
-            request=request,
-            created_at=created_at,
-            warnings=warnings,
-            inventory=inventory,
-            classification=classification,
-            qdrant_references=reference_result,
-            memory_context=memory_context,
-            snapshot_sources_attempted=snapshot_result.sources_attempted,
-            mcp_sources_attempted=enrichment_result.sources_attempted,
-        )
-        memory_write_result = self._memory.write_generation_summary(
-            namespace_key=namespace_key,
-            mop_id=mop_id,
-            run_id=run_id,
-            correlation_id=correlation_id,
             target_namespace=request.target_namespace,
-            inventory=inventory,
-            classification=classification,
-            qdrant_references=reference_result,
-            warnings=artifact_result.warnings,
+            mode=request.mode.value,
+            caller=request.caller,
         )
+        observability.record_event(
+            event_type="request_received",
+            phase="request_received",
+            action="generate_mop",
+            status="accepted",
+            details={
+                "source_snapshot_id": request.source_snapshot_id,
+                "include_helm": request.include_helm,
+                "include_raw_k8s": request.include_raw_k8s,
+                "include_validation_steps": request.include_validation_steps,
+                "include_rollback_steps": request.include_rollback_steps,
+                "include_application_schema": request.include_application_schema,
+            },
+        )
+
+        with observability.phase("memory_read", action="read_namespace_memory"):
+            memory_context = self._memory.read_context(
+                namespace_key=namespace_key,
+                correlation_id=correlation_id,
+                run_id=run_id,
+            )
+        warnings.extend(memory_context.warnings)
+        observability.record_event(
+            event_type="memory_read",
+            phase="memory_read",
+            action="read_namespace_memory",
+            status=memory_context.status,
+            details={
+                "enabled": memory_context.enabled,
+                "namespace_key": memory_context.namespace_key,
+                "read_count": memory_context.read_count,
+                "backend_status": getattr(memory_context, "backend_status", {}),
+            },
+        )
+
+        with observability.phase("read_latest_snapshot"):
+            snapshot_result = self._snapshot_selector.read(source_namespace, request.source_snapshot_id)
+        warnings.extend(snapshot_result.warnings)
+        observability.record_event(
+            event_type="snapshot_read",
+            phase="read_latest_snapshot",
+            action="read_latest_snapshot",
+            status="found" if snapshot_result.inventory else "missing",
+            details={
+                "sources_attempted": snapshot_result.sources_attempted,
+                "inventory_source": snapshot_result.inventory.source if snapshot_result.inventory else None,
+                "resource_count": snapshot_result.inventory.resource_count if snapshot_result.inventory else 0,
+                "helm_release_count": snapshot_result.inventory.helm_release_count
+                if snapshot_result.inventory
+                else 0,
+            },
+        )
+
+        with observability.phase("enrich_from_mcp"):
+            enrichment_result = self._mcp_enrichment.enrich(
+                namespace=source_namespace,
+                correlation_id=correlation_id,
+                snapshot_inventory=snapshot_result.inventory,
+            )
+        warnings.extend(enrichment_result.warnings)
+        inventory = enrichment_result.inventory
+        observability.record_event(
+            event_type="mcp_enrichment",
+            phase="enrich_from_mcp",
+            action="governed_mcp_read_enrichment",
+            status="ok" if inventory else "no_inventory",
+            details={
+                "sources_attempted": enrichment_result.sources_attempted,
+                "resource_count": inventory.resource_count if inventory else 0,
+                "helm_release_count": inventory.helm_release_count if inventory else 0,
+                "raw_kubectl_or_helm_used": False,
+            },
+        )
+
+        with observability.phase("classify_resources"):
+            classification = classify_inventory(inventory)
+        if classification:
+            warnings.extend(classification.warnings)
+        observability.record_event(
+            event_type="classification",
+            phase="classify_resources",
+            action="classify_helm_raw_excluded_warning_only",
+            status="ok" if classification else "skipped_no_inventory",
+            details=_classification_summary(classification),
+        )
+
+        with observability.phase("qdrant_reference_lookup"):
+            reference_result = self._reference_lookup.lookup(
+                inventory=inventory,
+                classification=classification,
+            )
+        observability.record_event(
+            event_type="qdrant_lookup",
+            phase="qdrant_reference_lookup",
+            action="read_only_prior_reference_lookup",
+            status=reference_result.status,
+            details={
+                "enabled": reference_result.enabled,
+                "reference_count": reference_result.reference_count,
+                "query_count": len(reference_result.queries),
+                "write_or_ingest_performed": False,
+            },
+        )
+
+        with observability.phase("render_artifacts"):
+            artifact_result = self._artifact_writer.write(
+                mop_id=mop_id,
+                run_id=run_id,
+                correlation_id=correlation_id,
+                source_namespace=source_namespace,
+                request=request,
+                created_at=created_at,
+                warnings=warnings,
+                inventory=inventory,
+                classification=classification,
+                qdrant_references=reference_result,
+                memory_context=memory_context,
+                snapshot_sources_attempted=snapshot_result.sources_attempted,
+                mcp_sources_attempted=enrichment_result.sources_attempted,
+            )
+        artifact_manifest = _read_artifact_manifest(artifact_result.artifact_manifest_path)
+        observability.record_event(
+            event_type="rendering",
+            phase="render_artifacts",
+            action="render_human_mop_pdf_installation_notes_and_machine_plan",
+            status="generated",
+            details={
+                "artifact_manifest_path": artifact_result.artifact_manifest_path,
+                "human_mop_pdf_renderer": artifact_manifest.get("human_mop_pdf_renderer", {}),
+                "artifact_count": len(artifact_manifest.get("artifacts", {})),
+            },
+        )
+        observability.record_event(
+            event_type="validation",
+            phase="validate_artifact",
+            action="validate_generated_steps_have_evidence_or_inference",
+            status="ok" if _machine_plan_missing_evidence_count(artifact_manifest) == 0 else "warning",
+            details=_machine_plan_evidence_audit(artifact_manifest),
+        )
+        observability.record_llm_reasoning(
+            artifact_manifest.get("bounded_llm_reasoning"),
+            artifact_manifest.get("llm_repair_suggestions"),
+        )
+
+        with observability.phase("memory_write", action="write_generation_memory_summary"):
+            memory_write_result = self._memory.write_generation_summary(
+                namespace_key=namespace_key,
+                mop_id=mop_id,
+                run_id=run_id,
+                correlation_id=correlation_id,
+                target_namespace=request.target_namespace,
+                inventory=inventory,
+                classification=classification,
+                qdrant_references=reference_result,
+                warnings=artifact_result.warnings,
+            )
         if memory_write_result.warnings:
             artifact_result.warnings.extend(memory_write_result.warnings)
+        observability.record_event(
+            event_type="memory_write",
+            phase="memory_write",
+            action="write_non_secret_generation_summary",
+            status=memory_write_result.status,
+            details={
+                "enabled": memory_write_result.enabled,
+                "written_count": memory_write_result.written_count,
+                "backend_status": memory_write_result.backend_status,
+            },
+        )
         _update_artifact_memory_write_metadata(
             artifact_result.artifact_manifest_path,
             {
@@ -230,7 +360,26 @@ class MoPCreationOrchestrator:
                 "write_warnings": memory_write_result.warnings,
             },
         )
+        observability.record_warnings(artifact_result.warnings)
+        observability.record_event(
+            event_type="response_ready",
+            phase="return_response",
+            action="build_generation_response",
+            status="generated",
+            details={
+                "warning_count": len(artifact_result.warnings),
+                "qdrant_lookup_status": reference_result.status,
+                "memory_status": memory_write_result.status
+                if memory_write_result.enabled
+                else memory_context.status,
+            },
+        )
+        _update_artifact_observability_metadata(
+            artifact_result.artifact_manifest_path,
+            observability.summary(),
+        )
 
+        trace_ids = observability.trace_ids
         response = MoPGenerationResponse(
             status="generated",
             mop_id=mop_id,
@@ -265,8 +414,8 @@ class MoPCreationOrchestrator:
             classification_summary=_classification_summary(classification),
             warning_count=len(artifact_result.warnings),
             trace_ids=TraceIds(
-                langfuse=f"stub-langfuse-{run_id}",
-                signoz=f"stub-signoz-{run_id}",
+                langfuse=trace_ids.get("langfuse"),
+                signoz=trace_ids.get("signoz"),
             ),
             artifacts=ArtifactMetadata(
                 run_directory_path=artifact_result.run_directory_path,
@@ -289,7 +438,6 @@ class MoPCreationOrchestrator:
                 self._classifications[mop_id] = classification
             self._latest_mop_id = mop_id
         return response
-
     def _accepted_response(
         self,
         *,
@@ -319,8 +467,8 @@ class MoPCreationOrchestrator:
             classification_summary=_classification_summary(None),
             warning_count=0,
             trace_ids=TraceIds(
-                langfuse=f"stub-langfuse-{run_id}",
-                signoz=f"stub-signoz-{run_id}",
+                langfuse=self._observability.trace_ids(run_id).get("langfuse"),
+                signoz=self._observability.trace_ids(run_id).get("signoz"),
             ),
             artifacts=ArtifactMetadata(
                 run_directory_path=str(run_dir),
@@ -631,6 +779,54 @@ def _session_context_key(namespace: str) -> str:
     return f"namespace:{namespace}"
 
 
+def _read_artifact_manifest(path: str) -> dict[str, Any]:
+    artifact_path = Path(path)
+    if not artifact_path.is_file():
+        return {}
+    return json.loads(artifact_path.read_text(encoding="utf-8"))
+
+
+def _machine_plan_evidence_audit(manifest: dict[str, Any]) -> dict[str, Any]:
+    plan = manifest.get("machine_execution_plan")
+    phases = plan.get("phases") if isinstance(plan, dict) else []
+    total_steps = 0
+    missing_steps: list[str] = []
+    if not isinstance(phases, list):
+        phases = []
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        for step in phase.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            total_steps += 1
+            evidence_refs = step.get("evidence_refs") or []
+            inference = step.get("inference") if isinstance(step.get("inference"), dict) else {}
+            has_inference = bool(inference.get("rationale") or inference.get("label"))
+            if not evidence_refs and not has_inference:
+                missing_steps.append(str(step.get("step_id") or "unknown_step"))
+    return {
+        "total_step_count": total_steps,
+        "missing_evidence_or_inference_count": len(missing_steps),
+        "missing_step_ids": missing_steps[:25],
+        "policy": "every_generated_step_requires_evidence_refs_or_inference_label",
+    }
+
+
+def _machine_plan_missing_evidence_count(manifest: dict[str, Any]) -> int:
+    return int(_machine_plan_evidence_audit(manifest)["missing_evidence_or_inference_count"])
+
+
+def _update_artifact_observability_metadata(path: str, metadata: dict[str, Any]) -> None:
+    artifact_path = Path(path)
+    if not artifact_path.is_file():
+        return
+    manifest = json.loads(artifact_path.read_text(encoding="utf-8"))
+    manifest["observability"] = metadata
+    artifact_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
 def _update_artifact_memory_write_metadata(path: str, metadata: dict[str, Any]) -> None:
     artifact_path = Path(path)
     if not artifact_path.is_file():

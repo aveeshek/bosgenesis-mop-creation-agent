@@ -114,8 +114,14 @@ class InventorySettings(BaseModel):
 
 class ObservabilitySettings(BaseModel):
     langfuse_enabled: bool = True
+    langfuse_endpoint: str | None = None
+    langfuse_public_key: str | None = None
+    langfuse_secret_key: str | None = None
     signoz_enabled: bool = True
     otlp_endpoint: str | None = None
+    audit_enabled: bool = True
+    phase_metrics_enabled: bool = True
+    warning_taxonomy_enabled: bool = True
 
 
 class MemoryBackendSettings(BaseModel):
@@ -336,6 +342,15 @@ def _apply_env_overrides(settings: Settings) -> Settings:
         "MEMORY_QDRANT_ENABLED": ("memory", "qdrant", "enabled"),
         "MEMORY_QDRANT_ENDPOINT": ("memory", "qdrant", "endpoint"),
         "MEMORY_QDRANT_COLLECTION": ("memory", "qdrant", "collection"),
+        "LANGFUSE_ENABLED": ("observability", "langfuse_enabled"),
+        "LANGFUSE_HOST": ("observability", "langfuse_endpoint"),
+        "LANGFUSE_PUBLIC_KEY": ("observability", "langfuse_public_key"),
+        "LANGFUSE_SECRET_KEY": ("observability", "langfuse_secret_key"),
+        "SIGNOZ_ENABLED": ("observability", "signoz_enabled"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT": ("observability", "otlp_endpoint"),
+        "OBSERVABILITY_AUDIT_ENABLED": ("observability", "audit_enabled"),
+        "OBSERVABILITY_PHASE_METRICS_ENABLED": ("observability", "phase_metrics_enabled"),
+        "OBSERVABILITY_WARNING_TAXONOMY_ENABLED": ("observability", "warning_taxonomy_enabled"),
     }
     for env_name, path in env_map.items():
         env_value = os.getenv(env_name)

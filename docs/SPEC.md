@@ -35,3 +35,4 @@ The documentation set must preserve the original product context:
 - Agent-readable Markdown and machine execution plan contract.
 - Artifact lifecycle, download/archive, and cleanup contract.
 - Professional PDF MoP rendering contract.
+- Credentials and service configuration runbook for PostgreSQL, ClickHouse, Redis, Qdrant, Langfuse, SigNoz/OpenTelemetry, MCP endpoints, and LLM endpoints.

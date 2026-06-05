@@ -77,8 +77,8 @@ The sample deployment sections must be adapted for namespace mirroring:
 
 - access checks confirm source and target context;
 - backup/export captures source manifests and Helm values references;
-- deployment execution creates or verifies target namespace, secret placeholders, ConfigMaps, PVCs, Helm releases, raw Kubernetes resources, ingress, and optional application schemas;
-- validation checks workloads, services, ingress, Helm release status, PVCs, and application schemas;
+- deployment execution creates or verifies target namespace, secret placeholders, ConfigMaps, PVCs, Helm releases, raw Kubernetes resources, and ingress; optional application schemas are backlog/future;
+- validation checks workloads, services, ingress, Helm release status, and PVCs; application schema validation is backlog/future;
 - rollback removes target Helm releases and generated raw resources, with namespace deletion only when explicitly approved.
 
 ## 6. Professional PDF Rendering Requirements

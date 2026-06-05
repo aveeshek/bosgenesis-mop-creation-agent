@@ -2,9 +2,9 @@
 
 ## Intent
 
-`application/` defines application-mode schema and component inference contracts.
+`application/` defines deferred/backlog application-mode schema and component inference contracts.
 
-Application mode augments `platform-only` output with metadata-only schema/topology guidance. It does not execute schema creation or copy data.
+Application mode is deferred because Phase 12 is skipped for now. The module contract is retained for future implementation. When reactivated, it will augment `platform-only` output with metadata-only schema/topology guidance and must not execute schema creation or copy data.
 
 ## Targets
 

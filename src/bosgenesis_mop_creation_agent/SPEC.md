@@ -11,7 +11,7 @@ The package must support:
 - Codex-integrated on-demand MCP mode for iterative generation and refinement;
 - standalone REST-triggered mode using LangGraph/LangChain and a configured LLM profile;
 - `platform-only` generation mode;
-- `application` generation mode with metadata-only schema/topology output;
+- deferred/backlog `application` generation mode with metadata-only schema/topology output; Phase 12 is skipped for now;
 - local artifact generation for both the human MoP PDF and Markdown installation notes;
 - standalone `machine_execution_plan.yaml` generation for downstream agents;
 - artifact preview, full-file download, generated-folder zip archive, and housekeeping deletion APIs;

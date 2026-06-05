@@ -43,7 +43,7 @@ No secret values may appear in:
 
 ## Credential handling
 
-Credentials for application mode must be read-only, explicit, redacted, and never persisted as plaintext.
+When deferred application mode is reactivated, credentials for application mode must be read-only, explicit, redacted, and never persisted as plaintext.
 
 ## Policy failures
 

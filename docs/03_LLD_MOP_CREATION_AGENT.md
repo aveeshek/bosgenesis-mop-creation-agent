@@ -9,7 +9,7 @@
 
 The agent is not an executor. It creates safe, line-by-line human MoP content from the approved sample-derived MoP template. The current implementation writes a production-readable paginated PDF from the same rendered human MoP markdown. It also creates LLM/agent-readable Markdown installation notes and standalone machine execution YAML. It uses the latest inventory captured by the Analytical MoP ETL Agent and enriches it, when needed, through the existing Helm MCP and Kubernetes Inspector MCP.
 
-The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and optional Phase 11 short-term, episodic, and knowledge memory.
+The agent may use LLM reasoning when deterministic evidence is insufficient. Standalone mode uses LangGraph for workflow/state orchestration, LangChain for model/tool abstractions where useful, a configured LLM profile, and optional Phase 11 short-term, episodic, and knowledge memory. Application Mode remains a deferred/backlog contract; Phase 12 is skipped for now.
 
 ## 1. Suggested Project Structure
 
@@ -90,9 +90,9 @@ bosgenesis-mop-creation-agent/
         model_gateway.py
         prompt_contracts.py
       observability/
-        langfuse_tracer.py
-        signoz_otel.py
-        trace_context.py
+        models.py
+        service.py
+        __init__.py
       security/
         redaction.py
         policy.py
@@ -147,8 +147,8 @@ bosgenesis-mop-creation-agent/
 | `llm/langchain_flow.py` | Provides LangChain model, prompt, and tool adapter helpers used by the LangGraph workflow where useful. |
 | `llm/model_gateway.py` | Encapsulates configured Azure OpenAI or Ollama model profile access. |
 | `llm/models.py` | Defines strict LLM repair and bounded reasoning envelopes, diagnostics, confidence validation, and advisory labels. |
-| `observability/langfuse_tracer.py` | Emits Langfuse traces for prompts, decisions, and generation phases. |
-| `observability/signoz_otel.py` | Emits OpenTelemetry spans and metrics for SigNoz. |
+| `observability/service.py` | Coordinates redacted phase spans, audit events, warning taxonomy, sink status, and artifact observability metadata. |
+| `observability/models.py` | Defines structured audit events and phase latency metrics. |
 | `security/redaction.py` | Redacts secrets and sensitive values before prompts, logs, storage, and artifacts. |
 
 Phase 10 bounded reasoning is optional. It may produce `ReasoningFinding`
@@ -389,9 +389,9 @@ kubectl apply -f generated/<kind>-<name>.yaml -n <target-namespace>
 
 Generated raw Kubernetes sections must include validation commands and a rollback note for each resource group when practical.
 
-## 8. Application Mode Logic
+## 8. Application Mode Logic - Backlog
 
-Application mode extends platform-only generation with schema/topology metadata, not production data.
+Application mode is deferred/backlog. The following contract is retained for future implementation and must not be treated as active Phase 12 scope. When implemented later, it will extend platform-only generation with schema/topology metadata, not production data.
 
 Supported initial targets:
 
@@ -508,7 +508,7 @@ This agent does not persist generated chunks into Qdrant during generation. Any 
 
 ## 13. Observability and Audit
 
-Every run must emit structured phase events:
+Every run must emit redacted structured audit events, phase latency metrics, warning taxonomy, and optional OTel/SigNoz span metadata for these phases:
 
 ```text
 request_received
@@ -531,7 +531,7 @@ llm_reasoning_completed
 installation_notes_rendered
 ```
 
-Each event must carry `run_id`, `correlation_id`, source namespace, target namespace, mode, caller, phase, status, latency, and error details when present.
+Each event must carry `run_id`, `correlation_id`, source namespace, target namespace, mode, caller, phase, status, latency, redaction status, and error details when present. `artifact.json` must include `observability.trace_ids`, `sinks`, `phase_metrics`, `phase_latency_ms`, `warning_taxonomy`, and `audit_events`.
 
 ## 14. Tests
 
@@ -550,7 +550,7 @@ Each event must carry `run_id`, `correlation_id`, source namespace, target names
 | Trace disabled | Agent succeeds without Langfuse/SigNoz. |
 | Return content true | API returns Markdown installation notes content and artifact metadata. |
 | MCP unavailable fallback | Stored snapshot path returns warning instead of crashing when allowed. |
-| Application mode metadata only | Schema output contains no records, messages, or cache values. |
+| Application mode metadata only | Backlog/future: schema output contains no records, messages, or cache values when application mode is reactivated. |
 | Installation notes generated | `.installation.md` notes contain metadata, machine execution plan, phases, dependency graph, validation, rollback, evidence, and unknowns. |
 | Artifact lifecycle | Preview, download, generated-folder archive, single-run delete, and bulk delete stay within the artifact storage root. |
 | Standalone LLM path | LangGraph/LangChain/model gateway path records reasoning trace and handles model failure according to policy. |

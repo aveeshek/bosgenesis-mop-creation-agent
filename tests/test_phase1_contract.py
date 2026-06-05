@@ -67,8 +67,8 @@ def test_generate_get_and_latest_artifact_response(tmp_path: Path) -> None:
     assert payload["correlation_id"] == "test-correlation-id"
     assert payload["run_id"]
     assert payload["mop_id"]
-    assert payload["trace_ids"]["langfuse"].startswith("stub-langfuse-")
-    assert payload["trace_ids"]["signoz"].startswith("stub-signoz-")
+    assert len(payload["trace_ids"]["langfuse"]) == 32
+    assert payload["trace_ids"]["signoz"].startswith("signoz-")
     assert Path(payload["artifacts"]["run_directory_path"]).is_dir()
     assert Path(payload["artifacts"]["artifact_manifest_path"]).is_file()
     assert Path(payload["artifacts"]["human_mop_markdown_path"]).is_file()

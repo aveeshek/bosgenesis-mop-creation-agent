@@ -127,8 +127,12 @@ config:
       database: bosgenesis_k8s_ingestion
   observability:
     langfuse_enabled: true
+    langfuse_endpoint: http://langfuse-web.bosgenesis.svc.cluster.local:3000
     signoz_enabled: true
-    otlp_endpoint: http://signoz-otel-collector.signoz:4317
+    otlp_endpoint: http://signoz-otel-collector.signoz.svc.cluster.local:4317
+    audit_enabled: true
+    phase_metrics_enabled: true
+    warning_taxonomy_enabled: true
   memory:
     enabled: true
     langmem_enabled: true
@@ -209,3 +213,5 @@ secret:
   postgresDsn: ""
   memoryPgvectorDsn: ""
   clickhousePassword: ""
+  langfusePublicKey: ""
+  langfuseSecretKey: ""

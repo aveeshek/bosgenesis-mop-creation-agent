@@ -12,12 +12,12 @@ The initial target is namespace-only, public-repository, Kubernetes-and-Helm bas
 ## Modes
 
 - `platform-only`: infer and document Kubernetes resources, Helm releases, charts, values shape, manifests, services, ingress, PVCs, configmaps, jobs, cronjobs, and non-secret dependency ordering.
-- `application`: platform-only plus best-effort schema and topology inference for databases, caches, streams, and application components through approved MCP/data-ingestion boundaries and provided credentials.
+- `application`: defined as a future/backlog mode for metadata-only schema and topology inference. Phase 12 is intentionally skipped for now; current delivery focus remains `platform-only`.
 
 ## Runtime forms
 
 - On-demand MCP server integrated with Codex, where Codex can call the agent repeatedly to refine MoP artifacts.
-- Standalone REST-triggered agent that uses an external LLM, initially GPT-4.1 mini, through LangGraph/LangChain and LangMem-backed memory.
+- Standalone REST-triggered agent that uses configured LLM profiles through LangGraph/LangChain and optional Phase 11 memory.
 
 ## Phase 0 runtime
 
@@ -48,6 +48,11 @@ Deploy with Helm:
 ```bash
 IMAGE_REPOSITORY=<registry>/bosgenesis-mop-creation-agent IMAGE_TAG=<tag> ./playbook/deploy.sh
 ```
+
+Credential and service endpoint updates are documented in
+[docs/CREDENTIALS.md](docs/CREDENTIALS.md). Real credentials belong only in the
+ignored `charts/bosgenesis-mop-creation-agent/values.credentials.yaml` file or a
+secure values file passed through `HELM_VALUES_FILE`; never commit credentials.
 
 With a custom ingress host:
 
