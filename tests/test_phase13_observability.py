@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
+from bosgenesis_mop_creation_agent.config.settings import ObservabilitySettings
 from bosgenesis_mop_creation_agent.config.settings import AgentSettings, Settings
 from bosgenesis_mop_creation_agent.core.orchestrator import MoPCreationOrchestrator
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.observability.service import ObservabilityService
 
 
 def test_phase13_manifest_records_audit_spans_metrics_and_warning_taxonomy(tmp_path: Path) -> None:
@@ -68,3 +70,107 @@ def test_phase13_manifest_records_audit_spans_metrics_and_warning_taxonomy(tmp_p
     assert "snapshot" in observability["warning_taxonomy"]
     assert "mcp" in observability["warning_taxonomy"]
     assert observability["audit_event_count"] == len(observability["audit_events"])
+
+
+class _FakeLangfuseV3Client:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+        self.flushed = False
+
+    def create_trace_id(self, *, seed: str) -> str:
+        return f"{seed.replace('-', '')[:32]:0<32}"[:32]
+
+    def create_event(self, **kwargs: object) -> None:
+        self.events.append(kwargs)
+
+    def flush(self) -> None:
+        self.flushed = True
+
+
+class _FailingLangfuseClient(_FakeLangfuseV3Client):
+    def create_event(self, **kwargs: object) -> None:
+        raise RuntimeError("langfuse unavailable")
+
+
+def test_langfuse_v3_event_export_uses_redacted_metadata_only() -> None:
+    service = ObservabilityService(
+        ObservabilitySettings(
+            langfuse_enabled=True,
+            langfuse_endpoint="http://langfuse-web.bosgenesis.svc.cluster.local:3000",
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            signoz_enabled=False,
+        )
+    )
+    fake_client = _FakeLangfuseV3Client()
+    run = service.start_run(
+        mop_id="mop-1",
+        run_id="12345678-1234-5678-1234-567812345678",
+        correlation_id="corr-1",
+        source_namespace="bosgenesis",
+        target_namespace="bosgenesis-copy",
+        mode="platform-only",
+        caller="pytest",
+    )
+    run._langfuse_client = fake_client
+    run._sink_status["langfuse"] = "enabled"
+    run.trace_ids["langfuse"] = fake_client.create_trace_id(seed=run.context["run_id"])
+
+    run.record_llm_reasoning(
+        {
+            "enabled": True,
+            "attempted": True,
+            "status": "generated",
+            "findings": [{"label": "requires_human_review"}],
+            "diagnostics": {"prompt_chars": 42, "secret_key": "must-redact"},
+        },
+        {
+            "enabled": True,
+            "attempted": True,
+            "status": "generated",
+            "suggestions": [{"label": "manual_review"}],
+            "diagnostics": {"response_chars": 24},
+        },
+    )
+
+    assert fake_client.flushed is True
+    assert fake_client.events
+    event = fake_client.events[0]
+    assert event["name"] == "llm_reasoning_metadata"
+    assert event["trace_context"] == {"trace_id": run.trace_ids["langfuse"]}
+    assert event["input"] == {"policy": "redacted_metadata_only_no_prompt_or_response_text"}
+    assert "raw prompt" not in json.dumps(event).lower()
+    assert "***REDACTED***" in json.dumps(event)
+    assert run.summary()["sinks"]["langfuse"] == "enabled"
+
+
+def test_langfuse_export_failure_is_audited_without_failing_generation() -> None:
+    service = ObservabilityService(
+        ObservabilitySettings(
+            langfuse_enabled=True,
+            langfuse_endpoint="http://langfuse-web.bosgenesis.svc.cluster.local:3000",
+            langfuse_public_key="public",
+            langfuse_secret_key="secret",
+            signoz_enabled=False,
+        )
+    )
+    run = service.start_run(
+        mop_id="mop-1",
+        run_id="12345678-1234-5678-1234-567812345678",
+        correlation_id="corr-1",
+        source_namespace="bosgenesis",
+        target_namespace="bosgenesis-copy",
+        mode="platform-only",
+        caller="pytest",
+    )
+    run._langfuse_client = _FailingLangfuseClient()
+    run._sink_status["langfuse"] = "enabled"
+
+    run.record_llm_reasoning({"enabled": True, "attempted": True, "status": "generated"})
+
+    summary = run.summary()
+    assert summary["sinks"]["langfuse"] == "enabled_export_failed"
+    assert any(
+        event["event_type"] == "telemetry_export_failed"
+        for event in summary["audit_events"]
+    )

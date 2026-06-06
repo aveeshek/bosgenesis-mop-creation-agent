@@ -36,3 +36,4 @@ The documentation set must preserve the original product context:
 - Artifact lifecycle, download/archive, and cleanup contract.
 - Professional PDF MoP rendering contract.
 - Credentials and service configuration runbook for PostgreSQL, ClickHouse, Redis, Qdrant, Langfuse, SigNoz/OpenTelemetry, MCP endpoints, and LLM endpoints.
+- Phase 13.1 validation gates, unit test reports, and code coverage reports.

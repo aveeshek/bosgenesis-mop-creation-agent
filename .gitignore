@@ -2,10 +2,14 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+.coverage
 .venv/
 dist/
 build/
 *.egg-info/
+reports/*
+!reports/.gitkeep
+!reports/SPEC.md
 values.credentials.yaml
 certs/*
 !certs/.gitkeep

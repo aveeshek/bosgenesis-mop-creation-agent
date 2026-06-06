@@ -108,6 +108,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | FR-23 | Provide governed REST APIs for artifact preview, full artifact download, generated-folder zip archive, single-run deletion, and bulk artifact cleanup. |
 | FR-24 | Provide an optional, config-gated admin API to ingest completed redacted MoP artifacts into Qdrant for future reference lookup. |
 | FR-25 | Provide optional bounded LLM reasoning for ambiguity detection, public Helm chart hints, install-order sanity, missing manifest/spec explanations, required human inputs, and confidence labels. |
+| FR-26 | Provide Phase 13.1 validation gates that run Ruff, unit tests, JUnit test reports, branch coverage collection, coverage XML, and HTML coverage reports locally and in CI. |
 
 ## 4. Non-Functional Requirements
 
@@ -126,6 +127,7 @@ The generated human MoP content must allow a human operator to recreate source n
 | NFR-11 | Must never copy production data in platform-only or application mode. |
 | NFR-12 | Must record every phase, MCP call summary, Qdrant lookup, reasoning decision, generated-step evidence check, validation result, rendering decision, memory read/write, and response result with `run_id`, `correlation_id`, and trace context. |
 | NFR-13 | Must keep generation-time Qdrant access read-only; Qdrant ingestion must be explicit, gated, and outside the generation flow. |
+| NFR-14 | Validation reports must be reproducible through `playbook/test-report.sh` and `playbook/test-report.ps1`, ignored by git, and free of credentials, raw prompts, and production data. |
 
 ## 5. Runtime Modes
 

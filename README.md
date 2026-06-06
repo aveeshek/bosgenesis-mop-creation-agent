@@ -82,6 +82,38 @@ curl -X POST http://localhost:8080/mcp \
 
 Phase 1 generation returns IDs, trace placeholders, and artifact paths only. It does not call Kubernetes, Helm, Qdrant, or datastore integrations yet.
 
+## Validation Gates
+
+Phase 13.1 validation gates include Ruff, unit tests, JUnit test reports, and
+coverage reports.
+
+Run the validation report on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\playbook\test-report.ps1
+```
+
+Run the validation report from Bash:
+
+```bash
+./playbook/test-report.sh
+```
+
+Generated report files:
+
+```text
+reports/pytest/test-results.xml
+reports/coverage/coverage.xml
+reports/coverage/html/index.html
+```
+
+Generated reports are ignored by git. Install dev dependencies first when
+`pytest-cov` is not available:
+
+```bash
+python -m pip install -e ".[dev]"
+```
+
 ## Safety posture
 
 The agent is read-only during discovery and document generation. It must never populate data, expose secrets, or mutate runtime infrastructure.

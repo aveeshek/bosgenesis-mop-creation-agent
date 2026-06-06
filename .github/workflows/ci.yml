@@ -17,7 +17,23 @@ jobs:
       - name: Install package
         run: python -m pip install -e ".[dev]"
       - name: Lint
-        run: python -m ruff check .
+        run: python -m ruff check src tests
       - name: Test
-        run: python -m pytest
-
+        run: |
+          mkdir -p reports/pytest reports/coverage/html
+          python -m pytest \
+            --junitxml=reports/pytest/test-results.xml \
+            --cov=bosgenesis_mop_creation_agent \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml:reports/coverage/coverage.xml \
+            --cov-report=html:reports/coverage/html
+      - name: Upload test and coverage reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-reports
+          path: |
+            reports/pytest/test-results.xml
+            reports/coverage/coverage.xml
+            reports/coverage/html
