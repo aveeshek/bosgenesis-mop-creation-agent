@@ -105,6 +105,10 @@ function generate_mop(request):
             output_schema=ReasoningEnvelope,
             minimum_confidence=config.llm.minimum_confidence
         )
+        if response is malformed JSON:
+            attempt JSON extraction/repair
+        if still invalid:
+            retry once with same redacted evidence pack and strict JSON-only instruction
         validate schema and confidence
         keep findings as advisory guidance only
         do not mutate executable manifests, Helm commands, or values from LLM output

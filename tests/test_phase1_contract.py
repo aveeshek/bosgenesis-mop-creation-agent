@@ -223,6 +223,9 @@ def test_latest_returns_404_before_generation() -> None:
     response = client.get("/mop-creation/latest")
 
     assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert detail["error"] == "no_mop_generation_runs"
+    assert "POST /mop-creation/generate" in detail["next_step"]
 
 
 def test_runtime_namespace_can_be_read_and_switched(tmp_path: Path) -> None:

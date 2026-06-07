@@ -22,6 +22,17 @@ class _FakeChatModel:
         return type("Response", (), {"content": self.content, "additional_kwargs": {}})()
 
 
+class _SequenceChatModel:
+    def __init__(self, contents: list[str]) -> None:
+        self.contents = contents
+        self.prompts: list[str] = []
+
+    def invoke(self, prompt: str):
+        self.prompts.append(prompt)
+        content = self.contents.pop(0)
+        return type("Response", (), {"content": content, "additional_kwargs": {}})()
+
+
 def test_phase10_bounded_reasoning_is_disabled_by_default() -> None:
     result = build_bounded_reasoning(
         settings=LlmSettings(),
@@ -143,6 +154,76 @@ def test_phase10_bounded_reasoning_invalid_output_does_not_fail_generation() -> 
     assert result.status == "invalid_structured_output"
     assert result.findings == []
     assert result.warnings == ["llm_reasoning_invalid_structured_output"]
+    assert result.diagnostics.retry_attempted is True
+
+
+def test_phase10_bounded_reasoning_repairs_json_fences_and_trailing_commas() -> None:
+    result = build_bounded_reasoning(
+        settings=LlmSettings(reasoning_enabled=True, minimum_confidence=0.85),
+        reconstruction=ReconstructionPlan(
+            target_namespace="target",
+            warnings=["raw_manifest:Deployment/api:source_spec_missing"],
+        ),
+        classification=None,
+        correlation_id="test",
+        chat_model=_FakeChatModel(
+            """
+            ```json
+            {
+              "findings": [
+                {
+                  "focus_area": "missing_manifest_spec",
+                  "target": "Deployment/api",
+                  "finding": "Spec is absent.",
+                  "recommendation": "Ask a human to provide the missing manifest spec.",
+                  "confidence": 0.91,
+                  "rationale": "The warning indicates source spec is missing.",
+                  "evidence_refs": ["artifact.json#reconstruction.warnings"],
+                  "qdrant_refs": [],
+                  "required_human_inputs": ["missing Deployment/api spec"],
+                  "label": "llm_suggestion_requires_human_review",
+                  "authoritative": false,
+                  "executable_yaml_allowed": false,
+                },
+              ],
+            }
+            ```
+            """
+        ),
+    )
+
+    assert result.status == "generated"
+    assert result.diagnostics.parse_status == "valid_json_repaired"
+    assert result.diagnostics.retry_attempted is False
+    assert len(result.findings) == 1
+    assert result.findings[0].authoritative is False
+
+
+def test_phase10_bounded_reasoning_retries_once_after_invalid_json() -> None:
+    model = _SequenceChatModel(
+        [
+            "review this manually",
+            '{"findings": []}',
+        ]
+    )
+
+    result = build_bounded_reasoning(
+        settings=LlmSettings(reasoning_enabled=True, minimum_confidence=0.85),
+        reconstruction=ReconstructionPlan(
+            target_namespace="target",
+            warnings=["raw_manifest:Deployment/api:source_spec_missing"],
+        ),
+        classification=None,
+        correlation_id="test",
+        chat_model=model,
+    )
+
+    assert result.status == "no_high_confidence_findings"
+    assert result.warnings == []
+    assert result.diagnostics.parse_status == "valid_json"
+    assert result.diagnostics.retry_attempted is True
+    assert len(model.prompts) == 2
+    assert "Your last output was invalid JSON" in model.prompts[1]
 
 
 def test_phase10_artifact_manifest_includes_bounded_reasoning(tmp_path) -> None:

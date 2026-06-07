@@ -151,3 +151,12 @@ The bounded reasoning layer must not:
 When deterministic evidence has no candidate gaps, the layer may be skipped and
 must report `deterministic_sufficient`. Low-confidence findings are rejected and
 converted into diagnostics/human-review needs.
+
+If the first bounded reasoning response is malformed, wrapped in markdown, or
+contains repairable JSON formatting issues, the parser may extract or repair the
+JSON for schema validation. If parsing still fails, the agent may make exactly
+one deterministic retry with the same redacted evidence pack and an instruction
+to return only `{"findings": []}` or valid `ReasoningEnvelope` JSON. The retry
+must not include or persist the raw malformed response. If the retry also fails,
+generation must continue with deterministic artifacts and an
+`llm_reasoning_invalid_structured_output` warning.

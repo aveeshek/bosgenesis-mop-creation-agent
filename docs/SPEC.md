@@ -37,3 +37,12 @@ The documentation set must preserve the original product context:
 - Professional PDF MoP rendering contract.
 - Credentials and service configuration runbook for PostgreSQL, ClickHouse, Redis, Qdrant, Langfuse, SigNoz/OpenTelemetry, MCP endpoints, and LLM endpoints.
 - Phase 13.1 validation gates, unit test reports, and code coverage reports.
+- Phase 15 deployment guide, sample requests, and release-candidate operational runbook.
+
+## Phase 15 documents
+
+- `DEPLOYMENT.md`: build, deploy, upgrade, rollback, and rollout verification.
+- `SAMPLE_REQUESTS.md`: copy-pasteable API requests for health, config,
+  generation, artifacts, Qdrant ingestion, and cleanup.
+- `RELEASE_CANDIDATE_RUNBOOK.md`: end-to-end release-candidate validation
+  procedure for platform-only and application-mode smoke tests.

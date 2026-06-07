@@ -49,6 +49,8 @@ def health(request: Request) -> dict[str, Any]:
         "status": "ok",
         "agent": settings.agent.name,
         "version": __version__,
+        "release_candidate": settings.release.release_candidate,
+        "values_schema_version": settings.release.values_schema_version,
         "source_namespace": namespace_state["active_namespace"],
         "configured_source_namespace": namespace_state["configured_namespace"],
         "session_context_key": namespace_state["session_context_key"],
@@ -118,7 +120,15 @@ def generate_mop(request_body: MoPGenerationRequest, request: Request) -> MoPGen
 def latest_mop(request: Request) -> MoPGenerationResponse:
     response = _orchestrator(request).latest()
     if response is None:
-        raise HTTPException(status_code=404, detail="No MoP generation responses found.")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "status": "not_found",
+                "error": "no_mop_generation_runs",
+                "message": "No MoP generation run has been started yet.",
+                "next_step": "Call POST /mop-creation/generate, then poll GET /mop-creation/{mop_id}.",
+            },
+        )
     return response
 
 
@@ -126,7 +136,10 @@ def latest_mop(request: Request) -> MoPGenerationResponse:
 def get_mop(mop_id: str, request: Request) -> MoPGenerationResponse:
     response = _orchestrator(request).get(mop_id)
     if response is None:
-        raise HTTPException(status_code=404, detail=f"MoP response not found: {mop_id}")
+        raise HTTPException(
+            status_code=404,
+            detail=_missing_mop_detail(mop_id, "response"),
+        )
     return response
 
 
@@ -185,7 +198,7 @@ def get_mop_classification(mop_id: str, request: Request) -> dict[str, Any]:
     if summary is None:
         raise HTTPException(
             status_code=404,
-            detail=f"MoP classification summary not found: {mop_id}",
+            detail=_missing_mop_detail(mop_id, "classification summary"),
         )
     return summary
 
@@ -194,7 +207,7 @@ def get_mop_classification(mop_id: str, request: Request) -> dict[str, Any]:
 def get_mop_artifact_index(mop_id: str, request: Request) -> dict[str, Any]:
     index = _orchestrator(request).artifact_index(mop_id)
     if index is None:
-        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+        raise HTTPException(status_code=404, detail=_missing_mop_detail(mop_id, "artifacts"))
     return index
 
 
@@ -202,7 +215,7 @@ def get_mop_artifact_index(mop_id: str, request: Request) -> dict[str, Any]:
 def preview_mop_artifact(mop_id: str, path: str, request: Request) -> dict[str, Any]:
     preview = _orchestrator(request).artifact_preview(mop_id, path)
     if preview is None:
-        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+        raise HTTPException(status_code=404, detail=_missing_mop_detail(mop_id, "artifacts"))
     if preview.get("status") == "denied":
         raise HTTPException(status_code=403, detail=preview)
     if preview.get("status") == "not_found":
@@ -216,7 +229,7 @@ def preview_mop_artifact(mop_id: str, path: str, request: Request) -> dict[str, 
 def download_mop_artifact(mop_id: str, path: str, request: Request) -> FileResponse:
     download = _orchestrator(request).artifact_download(mop_id, path)
     if download is None:
-        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+        raise HTTPException(status_code=404, detail=_missing_mop_detail(mop_id, "artifacts"))
     if download.get("status") == "denied":
         raise HTTPException(status_code=403, detail=download)
     if download.get("status") == "not_found":
@@ -232,7 +245,7 @@ def download_mop_artifact(mop_id: str, path: str, request: Request) -> FileRespo
 def archive_mop_artifacts(mop_id: str, prefix: str, request: Request) -> FileResponse:
     archive = _orchestrator(request).artifact_archive(mop_id, prefix)
     if archive is None:
-        raise HTTPException(status_code=404, detail=f"MoP artifacts not found: {mop_id}")
+        raise HTTPException(status_code=404, detail=_missing_mop_detail(mop_id, "artifacts"))
     if archive.get("status") == "denied":
         raise HTTPException(status_code=403, detail=archive)
     if archive.get("status") == "not_found":
@@ -348,6 +361,30 @@ def invoke_mcp_json_rpc(payload: dict[str, Any], request: Request) -> dict[str, 
             "isError": False,
         }
     else:
-        raise HTTPException(status_code=400, detail=f"Unsupported MCP method: {method}")
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "status": "unsupported",
+                "error": "unsupported_mcp_method",
+                "method": method,
+                "supported_methods": [
+                    "initialize",
+                    "notifications/initialized",
+                    "tools/list",
+                    "tools/call",
+                ],
+            },
+        )
 
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
+
+
+def _missing_mop_detail(mop_id: str, artifact_type: str) -> dict[str, Any]:
+    return {
+        "status": "not_found",
+        "error": "mop_run_not_found",
+        "mop_id": mop_id,
+        "artifact_type": artifact_type,
+        "message": f"MoP {artifact_type} was not found for the provided mop_id.",
+        "next_step": "Check GET /mop-creation/latest or start a new run with POST /mop-creation/generate.",
+    }

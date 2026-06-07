@@ -101,6 +101,53 @@ def test_mcp_enrichment_builds_live_inventory_without_raw_cluster_tools() -> Non
     assert "helm" not in called_tools
 
 
+def test_mcp_enrichment_syncs_k8s_inspector_namespace_when_supported() -> None:
+    transport = InMemoryMcpTransport(
+        available_tools={
+            "k8s_set_namespace",
+            "k8s_list_deployments",
+            "k8s_get_resource",
+            "helm_list_releases",
+            "data_ingestion_health",
+        },
+        responses={
+            "k8s_set_namespace": {
+                "active_namespace": "signoz",
+                "session_context_key": "namespace:signoz",
+            },
+            "k8s_list_deployments": {
+                "items": [{"metadata": {"name": "signoz"}, "namespace": "signoz"}]
+            },
+            "k8s_get_resource": {
+                "status": "ok",
+                "resource": {
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {"name": "signoz", "namespace": "signoz"},
+                    "spec": {"replicas": 1},
+                },
+            },
+            "helm_list_releases": {"releases": []},
+            "data_ingestion_health": {"status": "ok"},
+        },
+    )
+
+    result = _service(transport).enrich(
+        namespace="signoz",
+        correlation_id="phase4-signoz-test",
+        snapshot_inventory=None,
+    )
+
+    assert result.inventory is not None
+    assert result.inventory.namespace == "signoz"
+    assert result.inventory.resources[0].namespace == "signoz"
+    assert result.evidence["k8s_inspector_mcp"]["namespace_context"]["active_namespace"] == "signoz"
+    tool_calls = [call[1] for call in transport.calls]
+    assert tool_calls.index("k8s_set_namespace") < tool_calls.index("k8s_list_deployments")
+    set_namespace_call = next(call for call in transport.calls if call[1] == "k8s_set_namespace")
+    assert set_namespace_call[2]["namespace"] == "signoz"
+
+
 def test_mcp_enrichment_merges_live_inventory_and_continues_after_dependency_failure() -> None:
     snapshot = NormalizedInventory(
         source="postgres",

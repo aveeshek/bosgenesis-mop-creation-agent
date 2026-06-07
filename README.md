@@ -54,6 +54,13 @@ Credential and service endpoint updates are documented in
 ignored `charts/bosgenesis-mop-creation-agent/values.credentials.yaml` file or a
 secure values file passed through `HELM_VALUES_FILE`; never commit credentials.
 
+Phase 15 release-candidate operation is documented in:
+
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/SAMPLE_REQUESTS.md](docs/SAMPLE_REQUESTS.md)
+- [docs/RELEASE_CANDIDATE_RUNBOOK.md](docs/RELEASE_CANDIDATE_RUNBOOK.md)
+- [samples/requests](samples/requests)
+
 With a custom ingress host:
 
 ```bash

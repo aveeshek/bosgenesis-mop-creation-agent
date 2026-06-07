@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from pydantic import ValidationError
@@ -208,19 +209,73 @@ def _parse_suggestions(
 
 
 def _extract_json(content: str) -> tuple[dict[str, Any] | None, str]:
-    try:
-        payload = json.loads(content)
-        return payload if isinstance(payload, dict) else None, "valid_json"
-    except json.JSONDecodeError:
-        start = content.find("{")
-        end = content.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            return None, "invalid_no_json_object"
+    candidates = _json_candidates(content)
+    if not candidates:
+        return None, "invalid_no_json_object"
+
+    for index, candidate in enumerate(candidates):
+        payload = _load_json_object(candidate)
+        if payload is not None:
+            return payload, "valid_json" if index == 0 else "valid_json_extracted"
+
+    for candidate in candidates:
+        repaired = _repair_json_text(candidate)
+        if repaired == candidate:
+            continue
+        payload = _load_json_object(repaired)
+        if payload is not None:
+            return payload, "valid_json_repaired"
+
+    return None, "invalid_json"
+
+
+def _json_candidates(content: str) -> list[str]:
+    stripped = content.strip()
+    candidates = [stripped] if stripped.startswith("{") else []
+
+    for match in re.finditer(r"```(?:json)?\s*(.*?)```", content, flags=re.DOTALL | re.IGNORECASE):
+        block = match.group(1).strip()
+        if block:
+            candidates.append(block)
+
+    decoder = json.JSONDecoder()
+    for start, char in enumerate(content):
+        if char != "{":
+            continue
         try:
-            payload = json.loads(content[start : end + 1])
-            return payload if isinstance(payload, dict) else None, "valid_json_extracted"
+            _, end = decoder.raw_decode(content[start:])
         except json.JSONDecodeError:
-            return None, "invalid_json"
+            continue
+        candidates.append(content[start : start + end])
+
+    start = content.find("{")
+    end = content.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(content[start : end + 1])
+
+    unique = []
+    seen = set()
+    for candidate in candidates:
+        if candidate and candidate not in seen:
+            unique.append(candidate)
+            seen.add(candidate)
+    return unique
+
+
+def _load_json_object(candidate: str) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(candidate)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _repair_json_text(candidate: str) -> str:
+    repaired = candidate.strip()
+    repaired = re.sub(r"```(?:json)?", "", repaired, flags=re.IGNORECASE).replace("```", "")
+    repaired = repaired.replace("\u201c", '"').replace("\u201d", '"').replace("\u2019", "'")
+    repaired = re.sub(r",\s*([}\]])", r"\1", repaired)
+    return repaired
 
 
 def _count_raw_suggestions(payload: dict[str, Any]) -> int:

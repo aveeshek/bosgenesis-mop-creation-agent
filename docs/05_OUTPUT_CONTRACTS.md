@@ -319,10 +319,15 @@ accepted_count
 rejected_low_confidence_count
 rejected_invalid_count
 minimum_confidence
+retry_attempted
 ```
 
 These diagnostics must distinguish valid empty responses from invalid structured
 output and from low-confidence suggestions filtered by policy.
+
+For bounded reasoning, `retry_attempted=true` means the first LLM response could
+not be parsed as valid JSON and the agent made one strict JSON-only retry using
+the same redacted evidence pack. Raw malformed response text must not be stored.
 
 Phase 10 bounded reasoning artifact metadata must include:
 

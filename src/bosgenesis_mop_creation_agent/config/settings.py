@@ -29,6 +29,13 @@ class LoggingSettings(BaseModel):
     format: str = "json"
 
 
+class ReleaseSettings(BaseModel):
+    values_schema_version: str = "phase15.rc.v1"
+    release_candidate: str = "phase15-rc1"
+    app_version: str = "0.1.0"
+    docs_version: str = "phase15"
+
+
 class EndpointSettings(BaseModel):
     enabled: bool = True
     endpoint: str | None = None
@@ -243,6 +250,7 @@ class LlmSettings(BaseModel):
 
 
 class Settings(BaseModel):
+    release: ReleaseSettings = Field(default_factory=ReleaseSettings)
     agent: AgentSettings = Field(default_factory=AgentSettings)
     api: ApiSettings = Field(default_factory=ApiSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)

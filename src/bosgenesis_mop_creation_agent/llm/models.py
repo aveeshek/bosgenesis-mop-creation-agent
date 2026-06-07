@@ -95,6 +95,7 @@ class ReasoningDiagnostics(BaseModel):
     minimum_confidence: float = 0.85
     langgraph_used: bool = False
     redacted_prompt: bool = True
+    retry_attempted: bool = False
 
 
 class BoundedReasoningResult(BaseModel):

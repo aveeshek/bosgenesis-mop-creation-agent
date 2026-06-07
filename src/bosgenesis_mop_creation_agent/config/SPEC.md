@@ -25,6 +25,10 @@
 agent.name = bosgenesis-mop-creation-agent
 agent.mode = on_demand
 agent.source_namespace = bosgenesis
+release.values_schema_version = phase15.rc.v1
+release.release_candidate = phase15-rc1
+release.app_version = 0.1.0
+release.docs_version = phase15
 agent.public_repositories_only = true
 agent.default_generation_mode = platform-only
 local_storage.enabled = true

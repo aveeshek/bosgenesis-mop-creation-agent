@@ -1,0 +1,13 @@
+{
+  "target_namespace": "bosgenesis-platform-rc",
+  "source_snapshot_id": "latest",
+  "mode": "platform-only",
+  "include_helm": true,
+  "include_raw_k8s": true,
+  "include_validation_steps": true,
+  "include_rollback_steps": true,
+  "include_application_schema": false,
+  "return_content": false,
+  "caller": "phase15-operator",
+  "correlation_id": "phase15-platform-only-rc"
+}

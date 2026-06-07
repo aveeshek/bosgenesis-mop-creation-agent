@@ -13,6 +13,8 @@ def test_health_endpoint_returns_runtime_metadata() -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["agent"] == "bosgenesis-mop-creation-agent"
+    assert payload["release_candidate"] == "phase15-rc1"
+    assert payload["values_schema_version"] == "phase15.rc.v1"
     assert payload["source_namespace"] == "bosgenesis"
     assert payload["runtime_mode"] == "on_demand"
 

@@ -13,6 +13,8 @@ from bosgenesis_mop_creation_agent.mcp_clients.base import (
 
 
 K8S_READ_TOOLS = {
+    "k8s_get_namespace",
+    "k8s_set_namespace",
     "k8s_get_resource",
     "k8s_namespace_summary",
     "k8s_list_pods",
@@ -73,6 +75,17 @@ class K8sInspectorClient:
             available_tools = self.base.available_tools()
         except McpClientError as exc:
             return {}, [f"k8s_mcp_tools_list_failed: {exc}"]
+        if "k8s_set_namespace" in available_tools:
+            try:
+                payload["namespace_context"] = self.base.call_tool(
+                    "k8s_set_namespace",
+                    {
+                        "namespace": namespace,
+                        "actor": "bosgenesis-mop-creation-agent",
+                    },
+                )
+            except McpClientError as exc:
+                warnings.append(f"k8s_mcp_k8s_set_namespace_failed: {exc}")
         for key, tool_name in tool_map.items():
             if tool_name not in available_tools:
                 continue

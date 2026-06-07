@@ -1,5 +1,11 @@
 replicaCount: 1
 
+release:
+  values_schema_version: phase15.rc.v1
+  release_candidate: phase15-rc1
+  app_version: "0.1.0"
+  docs_version: phase15
+
 image:
   repository: bosgenesis-mop-creation-agent
   tag: "latest"

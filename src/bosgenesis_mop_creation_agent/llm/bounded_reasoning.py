@@ -88,6 +88,34 @@ def build_bounded_reasoning(
             response_source=response_source,
             langgraph_used=langgraph_used,
         )
+        if diagnostics.parse_status.startswith("invalid"):
+            retry_prompt = _retry_prompt(evidence_pack, settings.minimum_confidence, correlation_id)
+            LOGGER.info(
+                "llm_reasoning_retry_started",
+                extra={
+                    "correlation_id": correlation_id,
+                    "phase": "llm_reasoning",
+                    "status": "retry_after_invalid_json",
+                    "redacted_prompt": True,
+                    "model_profile": settings.default_model,
+                },
+            )
+            retry_content, retry_source, retry_langgraph_used = _invoke_with_optional_langgraph(
+                model, retry_prompt
+            )
+            retry_findings, retry_diagnostics = _parse_findings(
+                retry_content,
+                settings.minimum_confidence,
+                candidate_count=len(candidates),
+                prompt_chars=len(prompt) + len(retry_prompt),
+                response_source=f"{response_source};retry:{retry_source}",
+                langgraph_used=langgraph_used or retry_langgraph_used,
+            )
+            retry_diagnostics.retry_attempted = True
+            if not retry_diagnostics.parse_status.startswith("invalid") or retry_findings:
+                findings, diagnostics = retry_findings, retry_diagnostics
+            else:
+                diagnostics.retry_attempted = True
     except Exception as exc:
         diagnostics.parse_status = "failed"
         LOGGER.warning(
@@ -259,6 +287,24 @@ def _prompt(evidence_pack: dict[str, Any], minimum_confidence: float, correlatio
         "Every finding must keep label=llm_suggestion_requires_human_review, "
         "authoritative=false, executable_yaml_allowed=false.\n"
         f"Your response must validate against this JSON schema:\n{json.dumps(schema, indent=2)}\n"
+        f"Correlation ID: {correlation_id}\n"
+        f"Redacted evidence pack:\n{json.dumps(evidence_pack, indent=2)}"
+    )
+
+
+def _retry_prompt(
+    evidence_pack: dict[str, Any], minimum_confidence: float, correlation_id: str
+) -> str:
+    schema = ReasoningEnvelope.model_json_schema()
+    return (
+        "Your last output was invalid JSON. Return only valid JSON now.\n"
+        "Do not include markdown, prose, code fences, comments, or thinking text.\n"
+        "Return either {\"findings\": []} or a JSON object that validates against the schema.\n"
+        "Every finding must keep label=llm_suggestion_requires_human_review, "
+        "authoritative=false, executable_yaml_allowed=false.\n"
+        f"Only include findings with confidence >= {minimum_confidence}; otherwise return "
+        "{\"findings\": []}.\n"
+        f"JSON schema:\n{json.dumps(schema, indent=2)}\n"
         f"Correlation ID: {correlation_id}\n"
         f"Redacted evidence pack:\n{json.dumps(evidence_pack, indent=2)}"
     )

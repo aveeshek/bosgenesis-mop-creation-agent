@@ -330,6 +330,12 @@ agent:
   default_generation_mode: platform-only
   public_repositories_only: true
 
+release:
+  values_schema_version: phase15.rc.v1
+  release_candidate: phase15-rc1
+  app_version: "0.1.0"
+  docs_version: phase15
+
 mcp:
   k8s_inspector:
     enabled: true

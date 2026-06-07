@@ -1,0 +1,13 @@
+{
+  "target_namespace": "bosgenesis-application-rc",
+  "source_snapshot_id": "latest",
+  "mode": "application",
+  "include_helm": true,
+  "include_raw_k8s": true,
+  "include_validation_steps": true,
+  "include_rollback_steps": true,
+  "include_application_schema": true,
+  "return_content": false,
+  "caller": "phase15-operator",
+  "correlation_id": "phase15-application-mode-smoke-rc"
+}
