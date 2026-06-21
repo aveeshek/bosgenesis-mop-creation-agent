@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
-from bosgenesis_mop_creation_agent.classification.models import ClassificationSummary
+from bosgenesis_mop_creation_agent.classification.models import (
+    ClassificationSummary,
+    ClassifiedResource,
+    ResourceCategory,
+)
 from bosgenesis_mop_creation_agent.reconstruction.command_builder import build_helm_plan, build_raw_plan
 from bosgenesis_mop_creation_agent.reconstruction.helm_values import redacted_values_yaml
 from bosgenesis_mop_creation_agent.reconstruction.manifest_normalizer import (
@@ -31,25 +36,35 @@ def build_reconstruction_plan(
 
     raw_plans = []
     warnings = []
-    for classified in classification.raw_k8s:
+    for classified in _raw_reconstruction_items(classification):
         resource = classified.resource
-        manifest, manifest_warnings = normalize_manifest(resource, target_namespace)
-        filename = _manifest_filename(resource.kind, resource.name)
+        plan_name = _generated_resource_name(resource.kind, resource.name)
+        manifest, manifest_warnings = normalize_manifest(
+            resource,
+            target_namespace,
+            generated_name=plan_name if plan_name != resource.name else None,
+        )
+        plan_warnings = list(manifest_warnings)
+        if resource.kind == "Ingress" and plan_name != resource.name:
+            plan_warnings.append(f"ingress_name_prefixed_from:{resource.name}")
+        if classified.category == ResourceCategory.HELM_MANAGED and resource.kind == "Ingress":
+            plan_warnings.append("ingress_reconstructed_from_helm_managed_source")
+        filename = _manifest_filename(resource.kind, plan_name)
         file_path = generated_dir / filename
         file_path.write_text(dump_manifest(manifest), encoding="utf-8")
         warnings.extend(
             f"raw_manifest:{resource.kind}/{resource.name}:{warning}"
-            for warning in manifest_warnings
+            for warning in plan_warnings
         )
         raw_plans.append(
             build_raw_plan(
                 kind=resource.kind,
-                name=resource.name,
+                name=plan_name,
                 target_namespace=target_namespace,
                 file_path=str(file_path),
                 relative_path=f"generated/{filename}",
                 evidence_ref=_resource_evidence(inventory, resource.entity_key or resource.name),
-                warnings=manifest_warnings,
+                warnings=plan_warnings,
             )
         )
 
@@ -173,6 +188,36 @@ def _is_installable_chart_ref(value: str) -> bool:
 
 def _manifest_filename(kind: str, name: str) -> str:
     return f"{kind.lower()}-{_safe_name(name)}.yaml"
+
+
+def _raw_reconstruction_items(classification: ClassificationSummary) -> list[ClassifiedResource]:
+    items = list(classification.raw_k8s)
+    seen = {
+        (item.resource.kind, item.resource.namespace, item.resource.name)
+        for item in items
+    }
+    for item in classification.helm_managed:
+        key = (item.resource.kind, item.resource.namespace, item.resource.name)
+        if item.resource.kind == "Ingress" and key not in seen:
+            items.append(item)
+            seen.add(key)
+    return items
+
+
+def _generated_resource_name(kind: str, name: str) -> str:
+    if kind != "Ingress":
+        return name
+    safe_name = _safe_name(name).strip("-.") or "ingress"
+    if safe_name.startswith("agent-ai-"):
+        return safe_name
+    candidate = f"agent-ai-{safe_name}"
+    if len(candidate) <= 63:
+        return candidate
+    digest = hashlib.sha1(safe_name.encode("utf-8")).hexdigest()[:8]
+    prefix = "agent-ai-"
+    trimmed_length = 63 - len(prefix) - len(digest) - 1
+    trimmed = safe_name[:trimmed_length].rstrip("-.") or "ingress"
+    return f"{prefix}{trimmed}-{digest}"
 
 
 def _safe_name(value: str) -> str:

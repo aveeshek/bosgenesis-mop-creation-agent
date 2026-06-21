@@ -27,6 +27,14 @@ RUNTIME_ANNOTATIONS = {
     "control-plane.alpha.kubernetes.io/leader",
 }
 
+PVC_RUNTIME_ANNOTATIONS = {
+    "pv.kubernetes.io/bind-completed",
+    "pv.kubernetes.io/bound-by-controller",
+    "volume.beta.kubernetes.io/storage-provisioner",
+    "volume.kubernetes.io/selected-node",
+    "volume.kubernetes.io/storage-provisioner",
+}
+
 SERVICE_RUNTIME_FIELDS = {
     "clusterIP",
     "clusterIPs",
@@ -66,7 +74,12 @@ API_VERSION_BY_KIND = {
 }
 
 
-def normalize_manifest(resource: InventoryResource, target_namespace: str) -> tuple[dict[str, Any], list[str]]:
+def normalize_manifest(
+    resource: InventoryResource,
+    target_namespace: str,
+    *,
+    generated_name: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     manifest = _manifest_payload(resource)
     warnings: list[str] = []
 
@@ -80,9 +93,18 @@ def normalize_manifest(resource: InventoryResource, target_namespace: str) -> tu
     metadata = normalized.get("metadata")
     if not isinstance(metadata, dict):
         metadata = {}
-    metadata["name"] = metadata.get("name") or resource.name
+    source_name = metadata.get("name") or resource.name
+    metadata["name"] = generated_name or source_name
     metadata["namespace"] = target_namespace
+    if generated_name and generated_name != source_name:
+        annotations = metadata.get("annotations")
+        if not isinstance(annotations, dict):
+            annotations = {}
+        annotations.setdefault("bosgenesis.io/generated-by", "bosgenesis-mop-creation-agent")
+        annotations.setdefault("bosgenesis.io/original-name", str(source_name))
+        metadata["annotations"] = annotations
     _remove_runtime_metadata(metadata)
+    _remove_kind_runtime_metadata(normalized.get("kind"), metadata)
     normalized["metadata"] = metadata
 
     normalized.pop("status", None)
@@ -126,6 +148,18 @@ def _remove_runtime_metadata(metadata: dict[str, Any]) -> None:
             annotations.pop(key, None)
         if not annotations:
             metadata.pop("annotations", None)
+
+
+def _remove_kind_runtime_metadata(kind: str | None, metadata: dict[str, Any]) -> None:
+    if kind != "PersistentVolumeClaim":
+        return
+    annotations = metadata.get("annotations")
+    if not isinstance(annotations, dict):
+        return
+    for key in PVC_RUNTIME_ANNOTATIONS:
+        annotations.pop(key, None)
+    if not annotations:
+        metadata.pop("annotations", None)
 
 
 def _remove_kind_runtime_fields(manifest: dict[str, Any]) -> None:
