@@ -66,7 +66,11 @@ spec:
           configMap:
             name: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-config
         - name: mops
+          {{- if .Values.persistence.enabled }}
           persistentVolumeClaim:
-            claimName: {{ include "bosgenesis-mop-creation-agent.fullname" . }}-mops
+            claimName: {{ include "bosgenesis-mop-creation-agent.pvcName" . }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
         - name: tmp
           emptyDir: {}

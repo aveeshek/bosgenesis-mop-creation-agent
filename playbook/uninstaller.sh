@@ -20,6 +20,8 @@ REMOTE_IMAGE_TAR="${REMOTE_TMP_DIR}/${IMAGE_TAR}"
 DELETE_NAMESPACE="${DELETE_NAMESPACE:-false}"
 DELETE_REMOTE_IMAGE="${DELETE_REMOTE_IMAGE:-false}"
 DELETE_REMOTE_TAR="${DELETE_REMOTE_TAR:-false}"
+PVC_CLAIM_NAME="${PVC_CLAIM_NAME:-bosgenesis-mop-agent-artifacts}"
+DELETE_ARTIFACT_PVC="${DELETE_ARTIFACT_PVC:-false}"
 
 log() {
   printf '\n[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -52,7 +54,11 @@ else
   delete_resource service "${APP_NAME}"
   delete_resource ingress "${APP_NAME}"
   delete_resource configmap "${APP_NAME}-config"
-  delete_resource persistentvolumeclaim "${APP_NAME}-mops"
+  if [ "${DELETE_ARTIFACT_PVC}" = "true" ]; then
+    delete_resource persistentvolumeclaim "${PVC_CLAIM_NAME}"
+  else
+    log "Keeping shared artifact PVC ${PVC_CLAIM_NAME}. Set DELETE_ARTIFACT_PVC=true only for full cleanup."
+  fi
 fi
 
 if [ "${DELETE_REMOTE_IMAGE}" = "true" ] || [ "${DELETE_REMOTE_TAR}" = "true" ]; then

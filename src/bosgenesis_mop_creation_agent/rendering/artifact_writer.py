@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,12 +20,16 @@ from bosgenesis_mop_creation_agent.llm.models import BoundedReasoningResult, Rep
 from bosgenesis_mop_creation_agent.llm.repair_suggester import build_repair_suggestions
 from bosgenesis_mop_creation_agent.memory.models import MemoryContext
 from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.reconstruction.helm_hints import apply_helm_chart_hints
 from bosgenesis_mop_creation_agent.reconstruction.models import (
     HelmReleasePlan,
     RawManifestPlan,
     ReconstructionPlan,
 )
 from bosgenesis_mop_creation_agent.reconstruction.planner import build_reconstruction_plan
+from bosgenesis_mop_creation_agent.reconstruction.quality_gate import (
+    assert_executable_reconstruction_complete,
+)
 from bosgenesis_mop_creation_agent.rendering.pdf_renderer import render_human_mop_pdf
 from bosgenesis_mop_creation_agent.retrieval.models import ReferenceLookupResult
 from bosgenesis_mop_creation_agent.sources.snapshot_models import NormalizedInventory
@@ -61,6 +66,8 @@ class ArtifactWriteResult:
     installation_notes_path: str
     human_mop_content: str
     installation_notes_content: str
+    reconstruction_helm_release_count: int
+    reconstruction_raw_manifest_count: int
     warnings: list[str]
 
 
@@ -104,13 +111,26 @@ class LocalArtifactWriter:
         installation_notes_path = run_dir / f"{file_stem}.installation.md"
         machine_execution_plan_path = run_dir / "machine_execution_plan.yaml"
         artifact_manifest_path = run_dir / "artifact.json"
-        reconstruction = build_reconstruction_plan(
-            inventory=inventory,
-            classification=classification,
-            target_namespace=request.target_namespace,
-            generated_dir=generated_dir,
-            values_dir=values_dir,
-        )
+        try:
+            inventory = apply_helm_chart_hints(
+                inventory=inventory,
+                classification=classification,
+                hints=request.helm_chart_hints,
+            )
+            reconstruction = build_reconstruction_plan(
+                inventory=inventory,
+                classification=classification,
+                target_namespace=request.target_namespace,
+                generated_dir=generated_dir,
+                values_dir=values_dir,
+            )
+            assert_executable_reconstruction_complete(
+                classification=classification,
+                reconstruction=reconstruction,
+            )
+        except Exception:
+            shutil.rmtree(run_dir, ignore_errors=True)
+            raise
         reference_result = qdrant_references or ReferenceLookupResult()
         safe_memory_context = memory_context or MemoryContext(
             namespace_key=f"namespace:{source_namespace}"
@@ -253,6 +273,8 @@ class LocalArtifactWriter:
             installation_notes_path=str(installation_notes_path),
             human_mop_content=human_mop_content,
             installation_notes_content=installation_notes_content,
+            reconstruction_helm_release_count=reconstruction.helm_release_count,
+            reconstruction_raw_manifest_count=len(reconstruction.raw_manifests),
             warnings=all_warnings,
         )
 
@@ -329,8 +351,13 @@ class LocalArtifactWriter:
             "run_id": run_id,
             "correlation_id": correlation_id,
             "change_reason": "Phase 6 platform reconstruction artifact generation with normalized raw manifests and Helm value files.",
-            "helm_release_count": str(inventory.helm_release_count if inventory else 0),
-            "helm_release_summary": _helm_summary(inventory),
+            "helm_release_count": str(
+                max(
+                    inventory.helm_release_count if inventory else 0,
+                    reconstruction.helm_release_count,
+                )
+            ),
+            "helm_release_summary": _helm_summary(inventory, reconstruction),
             "raw_k8s_resource_count": str(_raw_count(inventory, classification)),
             "raw_k8s_summary": _resource_summary(inventory, classification),
             "application_target_count": "0",
@@ -746,12 +773,15 @@ def _step(
     rationale: str,
     depends_on: list[str] | None = None,
     qdrant_refs: list[str] | None = None,
+    manifest_refs: list[str] | None = None,
+    values_refs: list[str] | None = None,
     required_human_inputs: list[str] | None = None,
     rollback_commands: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
     mutates_target: bool,
     requires_human_approval: bool,
 ) -> dict[str, Any]:
-    return {
+    step = {
         "step_id": _safe_step_id(step_id),
         "phase_id": phase_id,
         "title": title,
@@ -759,6 +789,8 @@ def _step(
         "depends_on": depends_on or [],
         "evidence_refs": evidence_refs,
         "qdrant_refs": qdrant_refs or [],
+        "manifest_refs": manifest_refs or [],
+        "values_refs": values_refs or [],
         "inference": {
             "label": inference_label,
             "confidence": confidence,
@@ -772,6 +804,9 @@ def _step(
         "requires_human_approval": requires_human_approval,
         "on_failure": "STOP and resolve the evidence or generated artifact before continuing.",
     }
+    if metadata:
+        step.update(metadata)
+    return step
 
 
 def _secret_placeholder_steps(classification: ClassificationSummary | None) -> list[dict[str, Any]]:
@@ -832,13 +867,17 @@ def _helm_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str, Any]]
         human_inputs = []
         if plan.chart_ref.startswith("<"):
             human_inputs.append(f"public_chart_ref_for_{plan.release_name}")
+        if plan.chart_source == "private" and not plan.repo_url:
+            human_inputs.append(f"private_repo_url_for_{plan.release_name}")
         steps.append(
             _step(
                 step_id=f"helm-{index}-{plan.release_name}",
                 phase_id="install_helm_releases",
-                step_type="helm",
+                step_type="helm_upgrade",
                 title=f"Install Helm release {plan.release_name}",
                 depends_on=["apply_configmaps", "apply_pvcs", "prepare_secret_placeholders"],
+                values_refs=[plan.values_relative_path],
+                metadata=_helm_step_metadata(plan),
                 commands=[
                     {"kind": "dry_run", "command": plan.dry_run_command},
                     {"kind": "apply", "command": plan.install_command},
@@ -850,7 +889,7 @@ def _helm_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str, Any]]
                 evidence_refs=[plan.evidence_ref],
                 inference_label="observed",
                 confidence="medium",
-                rationale="Release was discovered from Helm evidence; values are redacted before use.",
+                rationale=_helm_plan_rationale(plan),
                 required_human_inputs=human_inputs,
                 rollback_commands=[plan.rollback_command],
                 mutates_target=True,
@@ -875,6 +914,7 @@ def _raw_plan_steps(
             step_type=_raw_step_type(plan.kind),
             title=f"Apply {plan.kind} {plan.name}",
             depends_on=depends_on or [],
+            manifest_refs=[plan.relative_path],
             commands=[
                 {"kind": "dry_run", "command": plan.dry_run_command},
                 {"kind": "apply", "command": plan.apply_command},
@@ -896,28 +936,98 @@ def _raw_plan_steps(
 
 
 def _validation_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str, Any]]:
-    commands = [
-        *reconstruction.validation_commands,
-        *[plan.validation_command for plan in reconstruction.helm_releases],
-        *[plan.validation_command for plan in reconstruction.raw_manifests],
-    ]
-    return [
-        _step(
-            step_id=f"validate-{index}",
-            phase_id="validate",
-            step_type="validation",
-            title=f"Run validation command {index}",
-            commands=[{"kind": "validate", "command": command}],
-            expected_outcomes=["Command succeeds and expected resources are visible."],
-            evidence_refs=["artifact.json"],
-            inference_label="observed_or_inferred",
-            confidence="medium",
-            rationale="Validation confirms generated platform resources.",
-            mutates_target=False,
-            requires_human_approval=False,
+    steps: list[dict[str, Any]] = []
+    for index, command in enumerate(reconstruction.validation_commands, start=1):
+        step_type = "context_check" if command.startswith("helm list") else "k8s_validate"
+        steps.append(
+            _step(
+                step_id=f"validate-preflight-{index}",
+                phase_id="validate",
+                step_type=step_type,
+                title=f"Run validation command {index}",
+                commands=[{"kind": "validate", "command": command}],
+                expected_outcomes=["Command succeeds and expected resources are visible."],
+                evidence_refs=["artifact.json"],
+                inference_label="observed_or_inferred",
+                confidence="medium",
+                rationale="Validation confirms generated platform resources.",
+                mutates_target=False,
+                requires_human_approval=False,
+            )
         )
-        for index, command in enumerate(commands, start=1)
-    ]
+    for index, plan in enumerate(reconstruction.helm_releases, start=1):
+        steps.append(
+            _step(
+                step_id=f"validate-helm-{index}-{plan.release_name}",
+                phase_id="validate",
+                step_type="helm_validate",
+                title=f"Validate Helm release {plan.release_name}",
+                values_refs=[plan.values_relative_path],
+                metadata=_helm_step_metadata(plan),
+                commands=[
+                    {
+                        "kind": "helm_validate",
+                        "command": _helm_template_command(
+                            plan,
+                            target_namespace=reconstruction.target_namespace,
+                        ),
+                    },
+                    {"kind": "helm_status", "command": plan.validation_command},
+                ],
+                expected_outcomes=[
+                    f"Helm chart {plan.chart_ref} renders for release {plan.release_name}.",
+                    f"Helm release {plan.release_name} is visible in {reconstruction.target_namespace}.",
+                ],
+                evidence_refs=[plan.evidence_ref],
+                inference_label="observed",
+                confidence="medium",
+                rationale=_helm_plan_rationale(plan),
+                mutates_target=False,
+                requires_human_approval=False,
+            )
+        )
+    for index, plan in enumerate(reconstruction.raw_manifests, start=1):
+        steps.append(
+            _step(
+                step_id=f"validate-k8s-{index}-{plan.kind}-{plan.name}",
+                phase_id="validate",
+                step_type="k8s_validate",
+                title=f"Validate {plan.kind} {plan.name}",
+                manifest_refs=[plan.relative_path],
+                commands=[{"kind": "k8s_validate", "command": plan.validation_command}],
+                expected_outcomes=[f"{plan.kind} {plan.name} exists in namespace {plan.namespace}."],
+                evidence_refs=[plan.evidence_ref],
+                inference_label="observed_or_inferred",
+                confidence="medium",
+                rationale="Validation confirms generated platform resources.",
+                mutates_target=False,
+                requires_human_approval=False,
+            )
+        )
+    return steps
+
+
+def _helm_step_metadata(plan: HelmReleasePlan) -> dict[str, Any]:
+    return {
+        "release_name": plan.release_name,
+        "chart_ref": plan.chart_ref,
+        "chart_version": plan.chart_version,
+        "chart_source": plan.chart_source,
+        "repo_name": plan.repo_name,
+        "repo_url": plan.repo_url,
+        "credential_secret_ref": plan.credential_secret_ref,
+        "generated_by": "bosgenesis-mop-creation-agent",
+    }
+
+
+def _helm_template_command(plan: HelmReleasePlan, *, target_namespace: str) -> str:
+    command = (
+        f"helm template {plan.release_name} {plan.chart_ref} "
+        f"--namespace {target_namespace} -f {plan.values_relative_path}"
+    )
+    if plan.chart_version:
+        command = f"{command} --version {plan.chart_version}"
+    return command
 
 
 def _raw_step_type(kind: str) -> str:
@@ -952,6 +1062,15 @@ def _required_human_inputs(
                     "input_id": f"public_chart_ref_for_{plan.release_name}",
                     "target": f"helm_release/{plan.release_name}",
                     "reason": "Chart reference was unavailable in observed evidence.",
+                    "blocks_phase": "install_helm_releases",
+                }
+            )
+        if plan.chart_source == "private" and not plan.repo_url:
+            inputs.append(
+                {
+                    "input_id": f"private_repo_url_for_{plan.release_name}",
+                    "target": f"helm_release/{plan.release_name}",
+                    "reason": "Private Helm chart source was selected but repo_url was not supplied.",
                     "blocks_phase": "install_helm_releases",
                 }
             )
@@ -1050,6 +1169,7 @@ def _helm_steps_by_plan(reconstruction: ReconstructionPlan) -> str:
             f"**Expected output:** Helm release `{plan.release_name}` is deployed in "
             f"namespace `{reconstruction.target_namespace}`.\n\n"
             f"**Values:** `{plan.values_relative_path}`\n\n"
+            f"**Chart source:** `{plan.chart_source}`\n\n"
             f"**Evidence:** {plan.evidence_ref}"
             f"{_warning_suffix(plan.warnings)}"
         )
@@ -1122,14 +1242,23 @@ def _helm_command_yaml(plan: HelmReleasePlan, index: int) -> str:
     return (
         f"  - step_id: helm-{index}-{plan.release_name}\n"
         f"    title: Install Helm release {plan.release_name}\n"
-        "    type: helm\n"
+        "    type: helm_upgrade\n"
+        f"    release_name: {plan.release_name}\n"
+        f"    chart_source: {plan.chart_source}\n"
+        f"    chart_ref: {plan.chart_ref}\n"
+        f"    chart_version: {plan.chart_version or ''}\n"
+        f"    repo_name: {plan.repo_name or ''}\n"
+        f"    repo_url: {plan.repo_url or ''}\n"
+        f"    credential_secret_ref: {plan.credential_secret_ref or ''}\n"
+        f"    values_refs: [{plan.values_relative_path}]\n"
+        "    generated_by: bosgenesis-mop-creation-agent\n"
         "    depends_on: [apply_configmaps, apply_pvcs, prepare_secret_placeholders]\n"
         f"    evidence_refs: [{plan.evidence_ref}]\n"
         "    qdrant_refs: []\n"
         "    inference:\n"
         "      label: observed\n"
         "      confidence: medium\n"
-        "      rationale: Release was discovered from Helm evidence; values are redacted.\n"
+        f"      rationale: {_helm_plan_rationale(plan)}\n"
         "    command: |\n"
         f"      {plan.dry_run_command}\n"
         f"      {plan.install_command}\n"
@@ -1138,6 +1267,20 @@ def _helm_command_yaml(plan: HelmReleasePlan, index: int) -> str:
         "    mutates_target: true\n"
         "    requires_human_approval: true"
     )
+
+
+def _helm_plan_rationale(plan: HelmReleasePlan) -> str:
+    if plan.chart_source == "observed":
+        return "Release was discovered from Helm evidence; values are redacted before use."
+    if plan.chart_source == "public":
+        return "Chart reference was supplied as public chart evidence; values are redacted before use."
+    if plan.chart_source == "private":
+        return "Chart reference was supplied as private chart evidence; credentials must come from approved secret references."
+    if plan.chart_source == "oci":
+        return "Chart reference was supplied as OCI chart evidence; values are redacted before use."
+    if plan.chart_source == "local":
+        return "Chart reference was supplied as local chart evidence; values are redacted before use."
+    return "Chart reference was supplied as operator evidence; values are redacted before use."
 
 
 def _raw_commands_yaml(
@@ -1157,6 +1300,7 @@ def _raw_command_yaml(plan: RawManifestPlan, index: int) -> str:
         f"    title: Apply {plan.kind} {plan.name}\n"
         "    type: kubernetes\n"
         "    depends_on: []\n"
+        f"    manifest_refs: [{plan.relative_path}]\n"
         f"    evidence_refs: [{plan.evidence_ref}]\n"
         "    qdrant_refs: []\n"
         "    inference:\n"
@@ -1193,32 +1337,108 @@ def _helm_rollback_yaml(reconstruction: ReconstructionPlan) -> str:
 
 
 def _validation_commands_yaml(reconstruction: ReconstructionPlan) -> str:
-    commands = [
-        *reconstruction.validation_commands,
-        *[plan.validation_command for plan in reconstruction.helm_releases],
-        *[plan.validation_command for plan in reconstruction.raw_manifests],
-    ]
-    if not commands:
+    entries: list[str] = []
+    for index, command in enumerate(reconstruction.validation_commands, 1):
+        step_type = "context_check" if command.startswith("helm list") else "k8s_validate"
+        entries.append(
+            "  - step_id: validate-preflight-{index}\n"
+            "    title: Validation command {index}\n"
+            "    type: {step_type}\n"
+            "    depends_on: []\n"
+            "    evidence_refs: []\n"
+            "    qdrant_refs: []\n"
+            "    inference:\n"
+            "      label: observed_or_inferred\n"
+            "      confidence: medium\n"
+            "      rationale: Validation confirms generated platform resources.\n"
+            "    command: |\n"
+            "      {command}\n"
+            "    expected: Command succeeds and expected resources are visible.\n"
+            "    on_failure: STOP and inspect target namespace.\n"
+            "    mutates_target: false\n"
+            "    requires_human_approval: false".format(
+                index=index,
+                step_type=step_type,
+                command=command,
+            )
+        )
+    for index, plan in enumerate(reconstruction.helm_releases, 1):
+        entries.append(
+            "  - step_id: validate-helm-{index}-{release_name}\n"
+            "    title: Validate Helm release {release_name}\n"
+            "    type: helm_validate\n"
+            "    release_name: {release_name}\n"
+            "    chart_source: {chart_source}\n"
+            "    chart_ref: {chart_ref}\n"
+            "    chart_version: {chart_version}\n"
+            "    repo_name: {repo_name}\n"
+            "    repo_url: {repo_url}\n"
+            "    credential_secret_ref: {credential_secret_ref}\n"
+            "    values_refs: [{values_ref}]\n"
+            "    generated_by: bosgenesis-mop-creation-agent\n"
+            "    depends_on: []\n"
+            "    evidence_refs: [{evidence_ref}]\n"
+            "    qdrant_refs: []\n"
+            "    inference:\n"
+            "      label: observed\n"
+            "      confidence: medium\n"
+            "      rationale: {rationale}\n"
+            "    command: |\n"
+            "      {template_command}\n"
+            "      {status_command}\n"
+            "    expected: Helm chart renders and release status is visible.\n"
+            "    on_failure: STOP and inspect target namespace.\n"
+            "    mutates_target: false\n"
+            "    requires_human_approval: false".format(
+                index=index,
+                release_name=plan.release_name,
+                chart_source=plan.chart_source,
+                chart_ref=plan.chart_ref,
+                chart_version=plan.chart_version or "",
+                repo_name=plan.repo_name or "",
+                repo_url=plan.repo_url or "",
+                credential_secret_ref=plan.credential_secret_ref or "",
+                values_ref=plan.values_relative_path,
+                evidence_ref=plan.evidence_ref,
+                rationale=_helm_plan_rationale(plan),
+                template_command=_helm_template_command(
+                    plan,
+                    target_namespace=reconstruction.target_namespace,
+                ),
+                status_command=plan.validation_command,
+            )
+        )
+    for index, plan in enumerate(reconstruction.raw_manifests, 1):
+        entries.append(
+            "  - step_id: validate-k8s-{index}-{kind}-{name}\n"
+            "    title: Validate {kind} {name}\n"
+            "    type: k8s_validate\n"
+            "    depends_on: []\n"
+            "    manifest_refs: [{manifest_ref}]\n"
+            "    evidence_refs: [{evidence_ref}]\n"
+            "    qdrant_refs: []\n"
+            "    inference:\n"
+            "      label: observed_or_inferred\n"
+            "      confidence: medium\n"
+            "      rationale: Validation confirms generated platform resources.\n"
+            "    command: |\n"
+            "      {command}\n"
+            "    expected: {kind} {name} exists in namespace {namespace}.\n"
+            "    on_failure: STOP and inspect target namespace.\n"
+            "    mutates_target: false\n"
+            "    requires_human_approval: false".format(
+                index=index,
+                kind=plan.kind,
+                name=plan.name,
+                manifest_ref=plan.relative_path,
+                evidence_ref=plan.evidence_ref,
+                command=plan.validation_command,
+                namespace=plan.namespace,
+            )
+        )
+    if not entries:
         return "  []"
-    return "\n".join(
-        "  - step_id: validate-{index}\n"
-        "    title: Validation command {index}\n"
-        "    type: validation\n"
-        "    depends_on: []\n"
-        "    evidence_refs: []\n"
-        "    qdrant_refs: []\n"
-        "    inference:\n"
-        "      label: observed_or_inferred\n"
-        "      confidence: medium\n"
-        "      rationale: Validation confirms generated platform resources.\n"
-        "    command: |\n"
-        "      {command}\n"
-        "    expected: Command succeeds and expected resources are visible.\n"
-        "    on_failure: STOP and inspect target namespace.\n"
-        "    mutates_target: false\n"
-        "    requires_human_approval: false".format(index=index, command=command)
-        for index, command in enumerate(commands, 1)
-    )
+    return "\n".join(entries)
 
 
 def _helm_unknowns_yaml(reconstruction: ReconstructionPlan) -> str:
@@ -1462,7 +1682,14 @@ def _confidence_summary_yaml(
     )
 
 
-def _helm_summary(inventory: NormalizedInventory | None) -> str:
+def _helm_summary(
+    inventory: NormalizedInventory | None,
+    reconstruction: ReconstructionPlan | None = None,
+) -> str:
+    if reconstruction and reconstruction.helm_releases:
+        names = ", ".join(plan.release_name for plan in reconstruction.helm_releases[:10])
+        suffix = " ..." if len(reconstruction.helm_releases) > 10 else ""
+        return f"Executable Helm plans generated for releases: {names}{suffix}"
     if not inventory or not inventory.helm_releases:
         return "No Helm releases found in the selected stored snapshot."
     names = ", ".join(release.release_name for release in inventory.helm_releases[:10])
@@ -1795,6 +2022,11 @@ def _reconstruction_manifest(reconstruction: ReconstructionPlan) -> dict[str, An
             {
                 "release_name": plan.release_name,
                 "chart_ref": plan.chart_ref,
+                "chart_version": plan.chart_version,
+                "chart_source": plan.chart_source,
+                "repo_name": plan.repo_name,
+                "repo_url": plan.repo_url,
+                "credential_secret_ref": plan.credential_secret_ref,
                 "file_path": plan.values_file_path,
                 "relative_path": plan.values_relative_path,
                 "warnings": plan.warnings,

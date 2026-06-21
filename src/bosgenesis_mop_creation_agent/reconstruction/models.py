@@ -20,6 +20,11 @@ class RawManifestPlan(BaseModel):
 class HelmReleasePlan(BaseModel):
     release_name: str
     chart_ref: str
+    chart_version: str | None = None
+    chart_source: str = "observed"
+    repo_name: str | None = None
+    repo_url: str | None = None
+    credential_secret_ref: str | None = None
     values_file_path: str
     values_relative_path: str
     dry_run_command: str

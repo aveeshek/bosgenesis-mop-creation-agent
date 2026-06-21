@@ -14,6 +14,35 @@ class OutputArtifact(StrEnum):
     INSTALLATION_NOTES = "installation_notes"
 
 
+class HelmChartSourceType(StrEnum):
+    OBSERVED = "observed"
+    PUBLIC = "public"
+    PRIVATE = "private"
+    OCI = "oci"
+    LOCAL = "local"
+    UNKNOWN = "unknown"
+
+
+class HelmChartHint(BaseModel):
+    release_name: str
+    chart_ref: str | None = None
+    chart_name: str | None = None
+    chart_version: str | None = None
+    repo_name: str | None = None
+    repo_url: str | None = None
+    source_type: HelmChartSourceType = HelmChartSourceType.UNKNOWN
+    credential_secret_ref: str | None = None
+    values_overrides: dict = Field(default_factory=dict)
+
+    @field_validator("release_name")
+    @classmethod
+    def validate_release_name(cls, value: str) -> str:
+        release_name = value.strip()
+        if not release_name:
+            raise ValueError("release_name is required")
+        return release_name
+
+
 class MoPGenerationRequest(BaseModel):
     source_namespace: str | None = None
     target_namespace: str
@@ -30,6 +59,7 @@ class MoPGenerationRequest(BaseModel):
             OutputArtifact.INSTALLATION_NOTES,
         ]
     )
+    helm_chart_hints: list[HelmChartHint] = Field(default_factory=list)
     return_content: bool = False
     caller: str = "api"
     correlation_id: str | None = None

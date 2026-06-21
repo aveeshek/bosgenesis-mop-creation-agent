@@ -201,6 +201,14 @@ config:
 
 persistence:
   enabled: true
+  # Neutral artifact bridge PVC shared with mop-execution-agent. The PVC is kept
+  # on Helm uninstall so either agent can be redeployed without blocking the
+  # other pod on a terminating claim.
+  existingClaim: ""
+  claimName: bosgenesis-mop-agent-artifacts
+  keep: true
+  accessModes:
+    - ReadWriteOnce
   size: 1Gi
   storageClassName: ""
 

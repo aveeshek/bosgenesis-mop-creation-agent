@@ -28,3 +28,8 @@ app.kubernetes.io/name: {{ include "bosgenesis-mop-creation-agent.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
+{{- define "bosgenesis-mop-creation-agent.pvcName" -}}
+{{- $defaultName := printf "%s-artifacts" (include "bosgenesis-mop-creation-agent.fullname" .) -}}
+{{- $claimName := default $defaultName .Values.persistence.claimName -}}
+{{- default $claimName .Values.persistence.existingClaim | trunc 63 | trimSuffix "-" -}}
+{{- end -}}

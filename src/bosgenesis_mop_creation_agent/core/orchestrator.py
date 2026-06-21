@@ -380,6 +380,10 @@ class MoPCreationOrchestrator:
         )
 
         trace_ids = observability.trace_ids
+        effective_helm_release_count = max(
+            inventory.helm_release_count if inventory else 0,
+            artifact_result.reconstruction_helm_release_count,
+        )
         response = MoPGenerationResponse(
             status="generated",
             mop_id=mop_id,
@@ -402,7 +406,7 @@ class MoPCreationOrchestrator:
             snapshot_sources_attempted=snapshot_result.sources_attempted,
             mcp_sources_attempted=enrichment_result.sources_attempted,
             resource_count=inventory.resource_count if inventory else 0,
-            helm_release_count=inventory.helm_release_count if inventory else 0,
+            helm_release_count=effective_helm_release_count,
             helm_managed_resource_count=(
                 classification.helm_managed_count if classification else 0
             ),

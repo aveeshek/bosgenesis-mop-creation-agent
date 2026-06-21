@@ -5,8 +5,13 @@ from pathlib import Path
 import yaml
 
 from bosgenesis_mop_creation_agent.classification.resource_classifier import classify_inventory
-from bosgenesis_mop_creation_agent.models.requests import MoPGenerationRequest
+from bosgenesis_mop_creation_agent.models.requests import (
+    HelmChartHint,
+    HelmChartSourceType,
+    MoPGenerationRequest,
+)
 from bosgenesis_mop_creation_agent.rendering.artifact_writer import LocalArtifactWriter
+from bosgenesis_mop_creation_agent.reconstruction.quality_gate import ReconstructionQualityError
 from bosgenesis_mop_creation_agent.sources.snapshot_models import (
     InventoryHelmRelease,
     InventoryResource,
@@ -222,7 +227,11 @@ def test_phase8_installation_notes_expose_machine_readable_execution_plan(tmp_pa
 
     helm_steps = phases[5]["steps"]
     raw_steps = phases[6]["steps"]
-    assert helm_steps[0]["type"] == "helm"
+    assert helm_steps[0]["type"] == "helm_upgrade"
+    assert helm_steps[0]["release_name"] == "api"
+    assert helm_steps[0]["chart_ref"] == "example/api"
+    assert helm_steps[0]["values_refs"] == ["values/values-api.yaml"]
+    assert helm_steps[0]["generated_by"] == "bosgenesis-mop-creation-agent"
     assert [command["kind"] for command in helm_steps[0]["commands"]] == [
         "dry_run",
         "apply",
@@ -232,10 +241,325 @@ def test_phase8_installation_notes_expose_machine_readable_execution_plan(tmp_pa
     assert raw_steps[0]["title"] == "Apply Deployment api"
     assert raw_steps[0]["requires_human_approval"] is True
     assert raw_steps[0]["commands"][0]["command"].endswith("--dry-run=server -o yaml")
+    helm_validate_steps = [
+        step for step in phases[9]["steps"] if step["type"] == "helm_validate"
+    ]
+    assert helm_validate_steps[0]["release_name"] == "api"
+    assert helm_validate_steps[0]["chart_ref"] == "example/api"
+    assert helm_validate_steps[0]["values_refs"] == ["values/values-api.yaml"]
+    assert helm_validate_steps[0]["commands"][0]["command"].startswith(
+        "helm template api example/api"
+    )
 
     manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
     assert manifest["machine_execution_plan"]["machine_execution_plan"]["schema_version"] == "1.0"
     assert manifest["artifacts"]["machine_execution_plan_path"].endswith("machine_execution_plan.yaml")
+
+
+def test_artifact_writer_fails_closed_for_helm_managed_workload_without_release_plan(
+    tmp_path,
+) -> None:
+    inventory = NormalizedInventory(
+        source="mcp",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        run_id="run-123",
+        resources=[
+            InventoryResource(
+                kind="Deployment",
+                name="signoz-otel-collector",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {
+                        "name": "signoz-otel-collector",
+                        "namespace": "signoz",
+                        "labels": {"app.kubernetes.io/managed-by": "Helm"},
+                        "annotations": {
+                            "meta.helm.sh/release-name": "signoz",
+                            "meta.helm.sh/release-namespace": "signoz",
+                        },
+                    },
+                    "spec": {
+                        "selector": {"matchLabels": {"app": "otel"}},
+                        "template": {
+                            "metadata": {"labels": {"app": "otel"}},
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "name": "otel",
+                                        "image": "docker.io/signoz/signoz-otel-collector",
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+            )
+        ],
+        helm_releases=[],
+    )
+    classification = classify_inventory(inventory)
+
+    try:
+        LocalArtifactWriter(str(tmp_path)).write(
+            mop_id="mop-fail",
+            run_id="run-abc",
+            correlation_id="corr-abc",
+            source_namespace="signoz",
+            request=MoPGenerationRequest(target_namespace="agent-testing"),
+            created_at=datetime(2026, 6, 20, tzinfo=UTC),
+            warnings=[],
+            inventory=inventory,
+            classification=classification,
+            snapshot_sources_attempted=[],
+            mcp_sources_attempted=["k8s_inspector_mcp"],
+        )
+    except ReconstructionQualityError as exc:
+        assert exc.code == "INCOMPLETE_HELM_WORKLOAD_RECONSTRUCTION"
+        assert (
+            "Deployment/signoz-otel-collector:helm_release_plan_missing:signoz"
+            in exc.details
+        )
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("Expected Helm workload reconstruction failure")
+
+    assert not (tmp_path / "mop-fail").exists()
+
+
+def test_artifact_writer_uses_public_helm_chart_hint_for_missing_release_plan(tmp_path) -> None:
+    inventory = NormalizedInventory(
+        source="mcp",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        run_id="run-123",
+        resources=[
+            InventoryResource(
+                kind="Deployment",
+                name="signoz-otel-collector",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "apps/v1",
+                    "kind": "Deployment",
+                    "metadata": {
+                        "name": "signoz-otel-collector",
+                        "namespace": "signoz",
+                        "labels": {"app.kubernetes.io/managed-by": "Helm"},
+                        "annotations": {
+                            "meta.helm.sh/release-name": "signoz",
+                            "meta.helm.sh/release-namespace": "signoz",
+                        },
+                    },
+                    "spec": {
+                        "selector": {"matchLabels": {"app": "otel"}},
+                        "template": {
+                            "metadata": {"labels": {"app": "otel"}},
+                            "spec": {
+                                "containers": [
+                                    {
+                                        "name": "otel",
+                                        "image": "docker.io/signoz/signoz-otel-collector",
+                                    }
+                                ]
+                            },
+                        },
+                    },
+                },
+            )
+        ],
+        helm_releases=[],
+    )
+    classification = classify_inventory(inventory)
+
+    result = LocalArtifactWriter(str(tmp_path)).write(
+        mop_id="mop-hinted",
+        run_id="run-abc",
+        correlation_id="corr-abc",
+        source_namespace="signoz",
+        request=MoPGenerationRequest(
+            target_namespace="agent-testing",
+            helm_chart_hints=[
+                HelmChartHint(
+                    release_name="signoz",
+                    chart_ref="signoz/signoz",
+                    chart_version="0.73.0",
+                    repo_name="signoz",
+                    repo_url="https://charts.signoz.io",
+                    source_type=HelmChartSourceType.PUBLIC,
+                )
+            ],
+        ),
+        created_at=datetime(2026, 6, 20, tzinfo=UTC),
+        warnings=[],
+        inventory=inventory,
+        classification=classification,
+        snapshot_sources_attempted=[],
+        mcp_sources_attempted=["k8s_inspector_mcp"],
+    )
+
+    manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
+    generated_values = manifest["reconstruction"]["generated_values"][0]
+    installation_notes = Path(result.installation_notes_path).read_text(encoding="utf-8")
+    human_mop = Path(result.human_mop_markdown_path).read_text(encoding="utf-8")
+    machine_plan = yaml.safe_load(
+        Path(result.run_directory_path, "machine_execution_plan.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result.reconstruction_helm_release_count == 1
+    assert manifest["reconstruction"]["helm_release_count"] == 1
+    assert generated_values["release_name"] == "signoz"
+    assert generated_values["chart_ref"] == "signoz/signoz"
+    assert generated_values["chart_version"] == "0.73.0"
+    assert generated_values["chart_source"] == "public"
+    assert generated_values["repo_url"] == "https://charts.signoz.io"
+    assert "helm upgrade --install signoz signoz/signoz" in installation_notes
+    assert "Executable Helm plans generated for releases: signoz" in human_mop
+    assert "--version 0.73.0" in installation_notes
+    assert "chart_source: public" in installation_notes
+    helm_phase = machine_plan["machine_execution_plan"]["phases"][5]
+    assert helm_phase["phase_id"] == "install_helm_releases"
+    assert helm_phase["steps"][0]["required_human_inputs"] == []
+    assert helm_phase["steps"][0]["release_name"] == "signoz"
+    assert helm_phase["steps"][0]["chart_ref"] == "signoz/signoz"
+    validate_phase = machine_plan["machine_execution_plan"]["phases"][9]
+    helm_validate_steps = [
+        step for step in validate_phase["steps"] if step["type"] == "helm_validate"
+    ]
+    assert helm_validate_steps[0]["release_name"] == "signoz"
+    assert helm_validate_steps[0]["chart_ref"] == "signoz/signoz"
+    assert helm_validate_steps[0]["values_refs"] == ["values/values-signoz.yaml"]
+
+
+def test_artifact_writer_fails_closed_for_private_chart_hint_without_repo_url(
+    tmp_path,
+) -> None:
+    inventory = NormalizedInventory(
+        source="mcp",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        run_id="run-123",
+        resources=[
+            InventoryResource(
+                kind="Service",
+                name="signoz",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "v1",
+                    "kind": "Service",
+                    "metadata": {
+                        "name": "signoz",
+                        "namespace": "signoz",
+                        "annotations": {
+                            "meta.helm.sh/release-name": "signoz",
+                            "meta.helm.sh/release-namespace": "signoz",
+                        },
+                    },
+                    "spec": {"ports": [{"port": 8080}], "selector": {"app": "signoz"}},
+                },
+            )
+        ],
+        helm_releases=[],
+    )
+    classification = classify_inventory(inventory)
+
+    try:
+        LocalArtifactWriter(str(tmp_path)).write(
+            mop_id="mop-private-missing-repo",
+            run_id="run-abc",
+            correlation_id="corr-abc",
+            source_namespace="signoz",
+            request=MoPGenerationRequest(
+                target_namespace="agent-testing",
+                helm_chart_hints=[
+                    HelmChartHint(
+                        release_name="signoz",
+                        chart_ref="private/signoz",
+                        source_type=HelmChartSourceType.PRIVATE,
+                    )
+                ],
+            ),
+            created_at=datetime(2026, 6, 20, tzinfo=UTC),
+            warnings=[],
+            inventory=inventory,
+            classification=classification,
+            snapshot_sources_attempted=[],
+            mcp_sources_attempted=["k8s_inspector_mcp"],
+        )
+    except ReconstructionQualityError as exc:
+        assert exc.code == "INCOMPLETE_HELM_WORKLOAD_RECONSTRUCTION"
+        assert "HelmRelease/signoz:private_repo_url_required" in exc.details
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("Expected private repo URL failure")
+
+    assert not (tmp_path / "mop-private-missing-repo").exists()
+
+
+def test_artifact_writer_fails_closed_for_missing_helm_chart_ref(tmp_path) -> None:
+    inventory = NormalizedInventory(
+        source="mcp",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        run_id="run-123",
+        resources=[
+            InventoryResource(
+                kind="Service",
+                name="signoz",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "v1",
+                    "kind": "Service",
+                    "metadata": {
+                        "name": "signoz",
+                        "namespace": "signoz",
+                        "annotations": {
+                            "meta.helm.sh/release-name": "signoz",
+                            "meta.helm.sh/release-namespace": "signoz",
+                        },
+                    },
+                    "spec": {"ports": [{"port": 8080}], "selector": {"app": "signoz"}},
+                },
+            )
+        ],
+        helm_releases=[
+            InventoryHelmRelease(
+                release_name="signoz",
+                namespace="signoz",
+                chart_name=None,
+                status="deployed",
+                normalized_payload={"values": {"replicaCount": 1}},
+            )
+        ],
+    )
+    classification = classify_inventory(inventory)
+
+    try:
+        LocalArtifactWriter(str(tmp_path)).write(
+            mop_id="mop-missing-chart",
+            run_id="run-abc",
+            correlation_id="corr-abc",
+            source_namespace="signoz",
+            request=MoPGenerationRequest(target_namespace="agent-testing"),
+            created_at=datetime(2026, 6, 20, tzinfo=UTC),
+            warnings=[],
+            inventory=inventory,
+            classification=classification,
+            snapshot_sources_attempted=[],
+            mcp_sources_attempted=["k8s_inspector_mcp", "helm_manager_mcp"],
+        )
+    except ReconstructionQualityError as exc:
+        assert exc.code == "INCOMPLETE_HELM_WORKLOAD_RECONSTRUCTION"
+        assert "HelmRelease/signoz:chart_ref_missing" in exc.details
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("Expected missing Helm chart reference failure")
+
+    assert not (tmp_path / "mop-missing-chart").exists()
 
 
 def _extract_machine_execution_plan(installation_notes: str) -> dict:

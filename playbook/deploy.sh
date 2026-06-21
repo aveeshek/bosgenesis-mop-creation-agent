@@ -36,6 +36,8 @@ QDRANT_RETRIEVAL_ENABLED="${QDRANT_RETRIEVAL_ENABLED:-true}"
 SOURCE_NAMESPACE="${SOURCE_NAMESPACE:-bosgenesis}"
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 SECRET_NAME="${SECRET_NAME:-bosgenesis-mop-creation-agent-secret}"
+PVC_CLAIM_NAME="${PVC_CLAIM_NAME:-bosgenesis-mop-agent-artifacts}"
+PVC_KEEP="${PVC_KEEP:-true}"
 
 log() {
   printf '\n[%s] %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -74,7 +76,7 @@ adopt_existing_helm_resources() {
   log "Checking for existing non-Helm resources to adopt"
   adopt_helm_resource configmap "${DEPLOYMENT_NAME}-config"
   adopt_helm_resource secret "${SECRET_NAME}"
-  adopt_helm_resource persistentvolumeclaim "${DEPLOYMENT_NAME}-mops"
+  adopt_helm_resource persistentvolumeclaim "${PVC_CLAIM_NAME}"
   adopt_helm_resource service "${DEPLOYMENT_NAME}"
   adopt_helm_resource deployment "${DEPLOYMENT_NAME}"
   adopt_helm_resource ingress "${DEPLOYMENT_NAME}"
@@ -150,6 +152,8 @@ if [ "${DEPLOY_METHOD}" = "helm" ]; then
     --set config.observability.langfuse_enabled="${LANGFUSE_ENABLED}"
     --set config.observability.signoz_enabled="${SIGNOZ_ENABLED}"
     --set config.retrieval.qdrant.enabled="${QDRANT_RETRIEVAL_ENABLED}"
+    --set persistence.claimName="${PVC_CLAIM_NAME}"
+    --set persistence.keep="${PVC_KEEP}"
   )
   if [ -n "${INGRESS_CLASS_NAME}" ]; then
     helm_args+=(--set ingress.className="${INGRESS_CLASS_NAME}")

@@ -59,14 +59,27 @@ def build_reconstruction_plan(
         values_file = values_dir / values_filename
         values_file.write_text(redacted_values_yaml(release), encoding="utf-8")
         chart_ref = _chart_ref(release)
+        chart_metadata = _chart_metadata(release)
         release_warnings = []
         if chart_ref.startswith("<"):
             release_warnings.append("chart_ref_missing_human_input_required")
             warnings.append(f"helm_release:{release.release_name}:chart_ref_missing_human_input_required")
+        if (
+            chart_metadata["chart_source"] == "private"
+            and not chart_metadata.get("repo_url")
+            and not str(chart_ref).startswith("oci://")
+        ):
+            release_warnings.append("private_repo_url_required")
+            warnings.append(f"helm_release:{release.release_name}:private_repo_url_required")
         helm_plans.append(
             build_helm_plan(
                 release_name=release.release_name,
                 chart_ref=chart_ref,
+                chart_version=chart_metadata.get("chart_version"),
+                chart_source=str(chart_metadata["chart_source"]),
+                repo_name=chart_metadata.get("repo_name"),
+                repo_url=chart_metadata.get("repo_url"),
+                credential_secret_ref=chart_metadata.get("credential_secret_ref"),
                 target_namespace=target_namespace,
                 values_file_path=str(values_file),
                 values_relative_path=f"values/{values_filename}",
@@ -97,21 +110,65 @@ def build_reconstruction_plan(
 
 
 def _chart_ref(release: InventoryHelmRelease) -> str:
-    if release.chart_name:
+    if release.chart_name and _is_installable_chart_ref(release.chart_name):
         return release.chart_name
+    hint = release.normalized_payload.get("operator_chart_hint")
+    if isinstance(hint, dict):
+        chart_ref = hint.get("chart_ref")
+        repo_name = hint.get("repo_name")
+        chart_name = hint.get("chart_name")
+        if isinstance(chart_ref, str) and chart_ref:
+            return chart_ref
+        if isinstance(repo_name, str) and repo_name and isinstance(chart_name, str) and chart_name:
+            return f"{repo_name}/{chart_name}"
+        if isinstance(chart_name, str) and chart_name and _is_installable_chart_ref(chart_name):
+            return chart_name
     release_payload = release.normalized_payload.get("release")
     if isinstance(release_payload, dict):
         chart = release_payload.get("chart")
-        if isinstance(chart, str) and chart:
+        if isinstance(chart, str) and chart and _is_installable_chart_ref(chart):
             return chart
     live = release.normalized_payload.get("mcp_live")
     if isinstance(live, dict):
         live_release = live.get("release")
         if isinstance(live_release, dict):
             chart = live_release.get("chart")
-            if isinstance(chart, str) and chart:
+            if isinstance(chart, str) and chart and _is_installable_chart_ref(chart):
                 return chart
     return "<chart-ref-required>"
+
+
+def _chart_metadata(release: InventoryHelmRelease) -> dict[str, str | None]:
+    hint = release.normalized_payload.get("operator_chart_hint")
+    if isinstance(hint, dict):
+        return {
+            "chart_source": str(hint.get("source_type") or "operator_hint"),
+            "chart_version": _string_or_none(hint.get("chart_version")) or release.chart_version,
+            "repo_name": _string_or_none(hint.get("repo_name")),
+            "repo_url": _string_or_none(hint.get("repo_url")),
+            "credential_secret_ref": _string_or_none(hint.get("credential_secret_ref")),
+        }
+    return {
+        "chart_source": "observed",
+        "chart_version": release.chart_version,
+        "repo_name": None,
+        "repo_url": None,
+        "credential_secret_ref": None,
+    }
+
+
+def _string_or_none(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _is_installable_chart_ref(value: str) -> bool:
+    return (
+        "/" in value
+        or value.startswith("oci://")
+        or value.startswith("./")
+        or value.startswith("../")
+        or value.endswith(".tgz")
+    )
 
 
 def _manifest_filename(kind: str, name: str) -> str:
