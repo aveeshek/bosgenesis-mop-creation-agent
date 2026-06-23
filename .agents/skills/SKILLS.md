@@ -1,3 +1,8 @@
+---
+name: bosgenesis-mop-creation-agent
+description: Use when Codex needs to generate, retrieve, inspect, download, archive, clean up, classify, or review BOS Genesis Method of Procedure artifacts through the `bosgenesis_mop_creation` MCP server, including source namespace switching, Helm/Kubernetes evidence classification, clone bundle generation, machine execution plans, generated manifests, PDF/Markdown MoPs, installation notes, and artifact downloads.
+---
+
 # BOS Genesis MoP Creation Agent
 
 Use this skill when Codex needs to generate, retrieve, inspect, download, archive,
@@ -14,6 +19,8 @@ Use this skill for:
 - Machine execution plan YAML review.
 - Generated Kubernetes resource bundle download.
 - Runtime source namespace inspection or switching.
+- Helm-managed workload reconstruction with public/private chart classification.
+- Fail-closed clone bundle generation when mandatory workload evidence is missing.
 - Kubernetes/Helm platform-only installation documentation.
 - Deferred application-mode smoke checks and human-review placeholders.
 - Classification, safety, warning, Qdrant, memory, and observability review.
@@ -77,6 +84,11 @@ Qdrant ingestion is explicit/admin-only. Generation must not write to Qdrant.
 ## Safety Rules
 
 - This agent generates documentation and artifact bundles only.
+- Do not produce a misleading partial clone bundle. If Helm-managed workloads,
+  Deployments, Services, Ingresses, PVCs, or other required workload evidence
+  cannot be reconstructed, fail the bundle or emit an explicit blocking warning.
+- When generated names need conflict avoidance, prefer names containing
+  `agent`, `ai`, or `agent-ai` so humans can identify agent-generated output.
 - Do not execute generated Helm, Kubernetes, database, cache, or stream commands
   unless the user explicitly asks for a separate execution workflow.
 - Do not include Kubernetes Secret values, credentials, tokens, passwords, or
@@ -136,6 +148,13 @@ inspector must also have Kubernetes RBAC in the selected namespace.
    review is needed.
 8. Use REST artifact download/archive endpoints for PDF, Markdown, YAML, and zip
    files.
+
+For namespace clone generation, verify the bundle contains all required
+workload surfaces. For Helm-managed evidence, classify whether the chart is
+public or private, recover release name/chart reference when available, and
+populate execution-plan Helm validation/install fields such as `release_name`
+and `chart_ref`. If the chart appears private and no repository URL is known,
+ask the user for the private Helm repository link instead of inventing one.
 
 ## Generate Request Shape
 
@@ -219,6 +238,9 @@ Before telling the user the MoP is good:
 - `status` is `generated`.
 - source namespace is the requested namespace.
 - generated manifests contain the target namespace, not the source namespace.
+- Helm-managed workloads are reconstructed from Helm evidence or fail closed.
+- source Ingress objects are reconstructed only when they exist, using
+  conflict-safe agent/AI-prefixed names for target namespace resources.
 - no `secret-*.yaml` manifests or Secret values are present.
 - policy-denial warnings are absent or clearly explained.
 - Pods are warning-only/runtime artifacts and skipped.

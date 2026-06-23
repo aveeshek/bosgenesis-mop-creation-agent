@@ -14,6 +14,7 @@ from bosgenesis_mop_creation_agent.classification.models import (
     ClassificationSummary,
     ClassifiedResource,
 )
+from bosgenesis_mop_creation_agent.classification.resource_classifier import classify_inventory
 from bosgenesis_mop_creation_agent.config.settings import LlmSettings
 from bosgenesis_mop_creation_agent.llm.bounded_reasoning import build_bounded_reasoning
 from bosgenesis_mop_creation_agent.llm.models import BoundedReasoningResult, RepairSuggestionResult
@@ -117,6 +118,8 @@ class LocalArtifactWriter:
                 classification=classification,
                 hints=request.helm_chart_hints,
             )
+            if inventory is not None:
+                classification = classify_inventory(inventory)
             reconstruction = build_reconstruction_plan(
                 inventory=inventory,
                 classification=classification,
@@ -1010,6 +1013,7 @@ def _validation_plan_steps(reconstruction: ReconstructionPlan) -> list[dict[str,
 def _helm_step_metadata(plan: HelmReleasePlan) -> dict[str, Any]:
     return {
         "release_name": plan.release_name,
+        "source_release_name": plan.source_release_name,
         "chart_ref": plan.chart_ref,
         "chart_version": plan.chart_version,
         "chart_source": plan.chart_source,
@@ -1244,6 +1248,7 @@ def _helm_command_yaml(plan: HelmReleasePlan, index: int) -> str:
         f"    title: Install Helm release {plan.release_name}\n"
         "    type: helm_upgrade\n"
         f"    release_name: {plan.release_name}\n"
+        f"    source_release_name: {plan.source_release_name or ''}\n"
         f"    chart_source: {plan.chart_source}\n"
         f"    chart_ref: {plan.chart_ref}\n"
         f"    chart_version: {plan.chart_version or ''}\n"
@@ -2021,6 +2026,7 @@ def _reconstruction_manifest(reconstruction: ReconstructionPlan) -> dict[str, An
         "generated_values": [
             {
                 "release_name": plan.release_name,
+                "source_release_name": plan.source_release_name,
                 "chart_ref": plan.chart_ref,
                 "chart_version": plan.chart_version,
                 "chart_source": plan.chart_source,

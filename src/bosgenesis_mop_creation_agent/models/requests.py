@@ -25,6 +25,7 @@ class HelmChartSourceType(StrEnum):
 
 class HelmChartHint(BaseModel):
     release_name: str
+    target_release_name: str | None = None
     chart_ref: str | None = None
     chart_name: str | None = None
     chart_version: str | None = None

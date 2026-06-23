@@ -19,6 +19,7 @@ class RawManifestPlan(BaseModel):
 
 class HelmReleasePlan(BaseModel):
     release_name: str
+    source_release_name: str | None = None
     chart_ref: str
     chart_version: str | None = None
     chart_source: str = "observed"

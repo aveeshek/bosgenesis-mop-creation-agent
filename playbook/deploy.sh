@@ -25,6 +25,7 @@ DEFAULT_HELM_CREDENTIALS_FILE="${HELM_CHART}/values.credentials.yaml"
 KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-deploy/k8s}"
 SKIP_BUILD="${SKIP_BUILD:-false}"
 SKIP_IMAGE_TRANSFER="${SKIP_IMAGE_TRANSFER:-false}"
+DOCKER_NO_CACHE="${DOCKER_NO_CACHE:-false}"
 ENABLE_INGRESS="${ENABLE_INGRESS:-true}"
 INGRESS_HOST="${INGRESS_HOST:-mop-creation-agent.bosgenesis.local}"
 INGRESS_CLASS_NAME="${INGRESS_CLASS_NAME:-nginx}"
@@ -92,9 +93,22 @@ validate_helm_chart_files() {
   fi
 }
 
+validate_source_tree() {
+  local package_dir="${REPO_ROOT}/src/bosgenesis_mop_creation_agent"
+  local entrypoint_file="${package_dir}/entrypoints/main.py"
+
+  if [ ! -f "${package_dir}/__init__.py" ] || [ ! -f "${entrypoint_file}" ]; then
+    echo "Source tree is incomplete for Docker build." >&2
+    echo "Expected package files under: ${package_dir}" >&2
+    echo "Run this from a full checkout of bosgenesis-mop-creation-agent, then retry." >&2
+    exit 1
+  fi
+}
+
 require_cmd kubectl
 require_cmd ssh
 require_cmd scp
+validate_source_tree
 
 if [ "${DEPLOY_METHOD}" = "helm" ]; then
   require_cmd helm
@@ -104,7 +118,12 @@ fi
 if [ "${SKIP_BUILD}" != "true" ]; then
   require_cmd docker
   log "Building image ${IMAGE}"
-  docker build -t "${IMAGE}" .
+  docker_build_args=(build -t "${IMAGE}")
+  if [ "${DOCKER_NO_CACHE}" = "true" ]; then
+    docker_build_args+=(--no-cache)
+  fi
+  docker_build_args+=(.)
+  docker "${docker_build_args[@]}"
 
   log "Saving image to ${IMAGE_TAR}"
   docker save "${IMAGE}" -o "${IMAGE_TAR}"

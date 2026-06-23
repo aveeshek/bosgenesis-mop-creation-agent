@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
@@ -79,6 +79,7 @@ def normalize_manifest(
     target_namespace: str,
     *,
     generated_name: str | None = None,
+    service_name_rewrites: Mapping[str, str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     manifest = _manifest_payload(resource)
     warnings: list[str] = []
@@ -109,6 +110,8 @@ def normalize_manifest(
 
     normalized.pop("status", None)
     _remove_kind_runtime_fields(normalized)
+    if normalized.get("kind") == "Ingress" and service_name_rewrites:
+        warnings.extend(_rewrite_ingress_backend_services(normalized, service_name_rewrites))
     _redact_sensitive_values(normalized)
     if _requires_spec(resource.kind) and not isinstance(normalized.get("spec"), dict):
         warnings.append("source_spec_missing_manifest_requires_human_completion")
@@ -172,6 +175,51 @@ def _remove_kind_runtime_fields(manifest: dict[str, Any]) -> None:
     if manifest.get("kind") == "PersistentVolumeClaim":
         for field in PVC_RUNTIME_FIELDS:
             spec.pop(field, None)
+
+
+def _rewrite_ingress_backend_services(
+    manifest: dict[str, Any],
+    service_name_rewrites: Mapping[str, str],
+) -> list[str]:
+    warnings: list[str] = []
+    spec = manifest.get("spec")
+    if not isinstance(spec, dict):
+        return warnings
+
+    default_backend = spec.get("defaultBackend")
+    if isinstance(default_backend, dict):
+        warnings.extend(_rewrite_backend_service(default_backend, service_name_rewrites))
+
+    for rule in spec.get("rules") or []:
+        if not isinstance(rule, dict):
+            continue
+        http = rule.get("http")
+        if not isinstance(http, dict):
+            continue
+        for path in http.get("paths") or []:
+            if not isinstance(path, dict):
+                continue
+            backend = path.get("backend")
+            if isinstance(backend, dict):
+                warnings.extend(_rewrite_backend_service(backend, service_name_rewrites))
+    return warnings
+
+
+def _rewrite_backend_service(
+    backend: dict[str, Any],
+    service_name_rewrites: Mapping[str, str],
+) -> list[str]:
+    service = backend.get("service")
+    if not isinstance(service, dict):
+        return []
+    current_name = service.get("name")
+    if not isinstance(current_name, str):
+        return []
+    rewritten_name = service_name_rewrites.get(current_name)
+    if not rewritten_name or rewritten_name == current_name:
+        return []
+    service["name"] = rewritten_name
+    return [f"ingress_backend_service_rewritten:{current_name}->{rewritten_name}"]
 
 
 def _requires_spec(kind: str) -> bool:

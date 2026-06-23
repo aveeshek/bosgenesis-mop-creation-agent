@@ -249,6 +249,15 @@ def _helm_evidence(resource: InventoryResource, helm_release_names: set[str]) ->
     if managed_by == "Helm" and release_name:
         return release_name, evidence
 
+    instance_name = _string_value(labels.get("app.kubernetes.io/instance"))
+    if (
+        instance_name
+        and instance_name in helm_release_names
+        and resource.kind in RAW_RECONSTRUCTABLE_KINDS
+    ):
+        evidence.append(f"label:app.kubernetes.io/instance={instance_name}")
+        return instance_name, evidence
+
     if managed_by == "Helm" and resource.name in helm_release_names:
         evidence.append(f"release_name_match={resource.name}")
         return resource.name, evidence

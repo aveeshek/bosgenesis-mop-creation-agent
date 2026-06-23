@@ -35,6 +35,7 @@ def build_raw_plan(
 def build_helm_plan(
     *,
     release_name: str,
+    source_release_name: str | None = None,
     chart_ref: str,
     chart_version: str | None = None,
     chart_source: str = "observed",
@@ -62,6 +63,7 @@ def build_helm_plan(
     rollback = f"helm uninstall {release_name} -n {target_namespace} --ignore-not-found"
     return HelmReleasePlan(
         release_name=release_name,
+        source_release_name=source_release_name,
         chart_ref=chart_ref,
         chart_version=chart_version,
         chart_source=chart_source,

@@ -36,6 +36,7 @@ def build_reconstruction_plan(
 
     raw_plans = []
     warnings = []
+    service_name_rewrites = _service_name_rewrites(inventory, classification)
     for classified in _raw_reconstruction_items(classification):
         resource = classified.resource
         plan_name = _generated_resource_name(resource.kind, resource.name)
@@ -43,6 +44,7 @@ def build_reconstruction_plan(
             resource,
             target_namespace,
             generated_name=plan_name if plan_name != resource.name else None,
+            service_name_rewrites=service_name_rewrites,
         )
         plan_warnings = list(manifest_warnings)
         if resource.kind == "Ingress" and plan_name != resource.name:
@@ -70,7 +72,8 @@ def build_reconstruction_plan(
 
     helm_plans = []
     for release in inventory.helm_releases:
-        values_filename = f"values-{_safe_name(release.release_name)}.yaml"
+        target_release_name = _target_helm_release_name(release)
+        values_filename = f"values-{_safe_name(target_release_name)}.yaml"
         values_file = values_dir / values_filename
         values_file.write_text(redacted_values_yaml(release), encoding="utf-8")
         chart_ref = _chart_ref(release)
@@ -88,7 +91,8 @@ def build_reconstruction_plan(
             warnings.append(f"helm_release:{release.release_name}:private_repo_url_required")
         helm_plans.append(
             build_helm_plan(
-                release_name=release.release_name,
+                release_name=target_release_name,
+                source_release_name=release.release_name,
                 chart_ref=chart_ref,
                 chart_version=chart_metadata.get("chart_version"),
                 chart_source=str(chart_metadata["chart_source"]),
@@ -172,6 +176,29 @@ def _chart_metadata(release: InventoryHelmRelease) -> dict[str, str | None]:
     }
 
 
+def _target_helm_release_name(release: InventoryHelmRelease) -> str:
+    hint = release.normalized_payload.get("operator_chart_hint")
+    if isinstance(hint, dict):
+        hinted = _string_or_none(hint.get("target_release_name"))
+        if hinted:
+            return _generated_release_name(hinted)
+    return _generated_release_name(release.release_name)
+
+
+def _generated_release_name(name: str) -> str:
+    safe_name = _safe_name(name).strip("-.") or "release"
+    if safe_name.startswith("agent-ai-"):
+        return safe_name[:63]
+    candidate = f"agent-ai-{safe_name}"
+    if len(candidate) <= 63:
+        return candidate
+    digest = hashlib.sha1(safe_name.encode("utf-8")).hexdigest()[:8]
+    prefix = "agent-ai-"
+    trimmed_length = 63 - len(prefix) - len(digest) - 1
+    trimmed = safe_name[:trimmed_length].rstrip("-.") or "release"
+    return f"{prefix}{trimmed}-{digest}"
+
+
 def _string_or_none(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
 
@@ -202,6 +229,49 @@ def _raw_reconstruction_items(classification: ClassificationSummary) -> list[Cla
             items.append(item)
             seen.add(key)
     return items
+
+
+def _service_name_rewrites(
+    inventory: NormalizedInventory,
+    classification: ClassificationSummary,
+) -> dict[str, str]:
+    target_by_release = {
+        release.release_name: _target_helm_release_name(release)
+        for release in inventory.helm_releases
+        if release.namespace == inventory.namespace
+    }
+    rewrites = {
+        release_name: target_name
+        for release_name, target_name in target_by_release.items()
+        if release_name != target_name
+    }
+    for item in classification.helm_managed:
+        if item.resource.kind != "Service" or not item.helm_release_name:
+            continue
+        target_release_name = target_by_release.get(item.helm_release_name)
+        if not target_release_name:
+            continue
+        target_name = _target_helm_related_name(
+            item.resource.name,
+            item.helm_release_name,
+            target_release_name,
+        )
+        if target_name != item.resource.name:
+            rewrites[item.resource.name] = target_name
+    return rewrites
+
+
+def _target_helm_related_name(
+    source_name: str,
+    source_release_name: str,
+    target_release_name: str,
+) -> str:
+    if source_name == source_release_name:
+        return target_release_name
+    source_prefix = f"{source_release_name}-"
+    if source_name.startswith(source_prefix):
+        return f"{target_release_name}-{source_name[len(source_prefix):]}"
+    return source_name
 
 
 def _generated_resource_name(kind: str, name: str) -> str:

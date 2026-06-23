@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+﻿from datetime import UTC, datetime
 import json
 from pathlib import Path
 
@@ -228,9 +228,10 @@ def test_phase8_installation_notes_expose_machine_readable_execution_plan(tmp_pa
     helm_steps = phases[5]["steps"]
     raw_steps = phases[6]["steps"]
     assert helm_steps[0]["type"] == "helm_upgrade"
-    assert helm_steps[0]["release_name"] == "api"
+    assert helm_steps[0]["release_name"] == "agent-ai-api"
+    assert helm_steps[0]["source_release_name"] == "api"
     assert helm_steps[0]["chart_ref"] == "example/api"
-    assert helm_steps[0]["values_refs"] == ["values/values-api.yaml"]
+    assert helm_steps[0]["values_refs"] == ["values/values-agent-ai-api.yaml"]
     assert helm_steps[0]["generated_by"] == "bosgenesis-mop-creation-agent"
     assert [command["kind"] for command in helm_steps[0]["commands"]] == [
         "dry_run",
@@ -244,11 +245,11 @@ def test_phase8_installation_notes_expose_machine_readable_execution_plan(tmp_pa
     helm_validate_steps = [
         step for step in phases[9]["steps"] if step["type"] == "helm_validate"
     ]
-    assert helm_validate_steps[0]["release_name"] == "api"
+    assert helm_validate_steps[0]["release_name"] == "agent-ai-api"
     assert helm_validate_steps[0]["chart_ref"] == "example/api"
-    assert helm_validate_steps[0]["values_refs"] == ["values/values-api.yaml"]
+    assert helm_validate_steps[0]["values_refs"] == ["values/values-agent-ai-api.yaml"]
     assert helm_validate_steps[0]["commands"][0]["command"].startswith(
-        "helm template api example/api"
+        "helm template agent-ai-api example/api"
     )
 
     manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
@@ -412,28 +413,171 @@ def test_artifact_writer_uses_public_helm_chart_hint_for_missing_release_plan(tm
 
     assert result.reconstruction_helm_release_count == 1
     assert manifest["reconstruction"]["helm_release_count"] == 1
-    assert generated_values["release_name"] == "signoz"
+    assert generated_values["release_name"] == "agent-ai-signoz"
+    assert generated_values["source_release_name"] == "signoz"
     assert generated_values["chart_ref"] == "signoz/signoz"
     assert generated_values["chart_version"] == "0.73.0"
     assert generated_values["chart_source"] == "public"
     assert generated_values["repo_url"] == "https://charts.signoz.io"
-    assert "helm upgrade --install signoz signoz/signoz" in installation_notes
-    assert "Executable Helm plans generated for releases: signoz" in human_mop
+    assert "helm upgrade --install agent-ai-signoz signoz/signoz" in installation_notes
+    assert "Executable Helm plans generated for releases: agent-ai-signoz" in human_mop
     assert "--version 0.73.0" in installation_notes
     assert "chart_source: public" in installation_notes
     helm_phase = machine_plan["machine_execution_plan"]["phases"][5]
     assert helm_phase["phase_id"] == "install_helm_releases"
     assert helm_phase["steps"][0]["required_human_inputs"] == []
-    assert helm_phase["steps"][0]["release_name"] == "signoz"
+    assert helm_phase["steps"][0]["release_name"] == "agent-ai-signoz"
+    assert helm_phase["steps"][0]["source_release_name"] == "signoz"
     assert helm_phase["steps"][0]["chart_ref"] == "signoz/signoz"
     validate_phase = machine_plan["machine_execution_plan"]["phases"][9]
     helm_validate_steps = [
         step for step in validate_phase["steps"] if step["type"] == "helm_validate"
     ]
-    assert helm_validate_steps[0]["release_name"] == "signoz"
+    assert helm_validate_steps[0]["release_name"] == "agent-ai-signoz"
     assert helm_validate_steps[0]["chart_ref"] == "signoz/signoz"
-    assert helm_validate_steps[0]["values_refs"] == ["values/values-signoz.yaml"]
+    assert helm_validate_steps[0]["values_refs"] == ["values/values-agent-ai-signoz.yaml"]
 
+
+def test_artifact_writer_skips_helm_instance_pvcs_and_rewrites_ingress_backend(
+    tmp_path,
+) -> None:
+    inventory = NormalizedInventory(
+        source="mcp",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        run_id="run-123",
+        resources=[
+            InventoryResource(
+                kind="Service",
+                name="signoz",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "v1",
+                    "kind": "Service",
+                    "metadata": {
+                        "name": "signoz",
+                        "namespace": "signoz",
+                        "labels": {"app.kubernetes.io/instance": "signoz"},
+                    },
+                    "spec": {"ports": [{"port": 8080}], "selector": {"app": "signoz"}},
+                },
+            ),
+            InventoryResource(
+                kind="PersistentVolumeClaim",
+                name="data-signoz-zookeeper-0",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "v1",
+                    "kind": "PersistentVolumeClaim",
+                    "metadata": {
+                        "name": "data-signoz-zookeeper-0",
+                        "namespace": "signoz",
+                        "labels": {"app.kubernetes.io/instance": "signoz"},
+                    },
+                    "spec": {
+                        "accessModes": ["ReadWriteOnce"],
+                        "resources": {"requests": {"storage": "8Gi"}},
+                    },
+                },
+            ),
+            InventoryResource(
+                kind="Ingress",
+                name="signoz",
+                namespace="signoz",
+                source="k8s",
+                normalized_payload={
+                    "apiVersion": "networking.k8s.io/v1",
+                    "kind": "Ingress",
+                    "metadata": {
+                        "name": "signoz",
+                        "namespace": "signoz",
+                        "labels": {"app.kubernetes.io/instance": "signoz"},
+                    },
+                    "spec": {
+                        "rules": [
+                            {
+                                "host": "signoz.bosgenesis.local",
+                                "http": {
+                                    "paths": [
+                                        {
+                                            "path": "/",
+                                            "pathType": "Prefix",
+                                            "backend": {
+                                                "service": {
+                                                    "name": "signoz",
+                                                    "port": {"number": 8080},
+                                                }
+                                            },
+                                        }
+                                    ]
+                                },
+                            }
+                        ]
+                    },
+                },
+            ),
+        ],
+        helm_releases=[
+            InventoryHelmRelease(
+                release_name="signoz",
+                namespace="signoz",
+                chart_name="signoz/signoz",
+                chart_version="0.129.0",
+                status="deployed",
+                normalized_payload={"values": {}},
+            )
+        ],
+    )
+    classification = classify_inventory(inventory)
+
+    result = LocalArtifactWriter(str(tmp_path)).write(
+        mop_id="mop-ingress-rewrite",
+        run_id="run-abc",
+        correlation_id="corr-abc",
+        source_namespace="signoz",
+        request=MoPGenerationRequest(target_namespace="agent-testing"),
+        created_at=datetime(2026, 6, 23, tzinfo=UTC),
+        warnings=[],
+        inventory=inventory,
+        classification=classification,
+        snapshot_sources_attempted=[],
+        mcp_sources_attempted=["k8s_inspector_mcp", "helm_manager_mcp"],
+    )
+
+    manifest = json.loads(Path(result.artifact_manifest_path).read_text(encoding="utf-8"))
+    generated_manifest = yaml.safe_load(
+        Path(result.run_directory_path, "generated", "ingress-agent-ai-signoz.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    machine_plan = yaml.safe_load(
+        Path(result.run_directory_path, "machine_execution_plan.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert result.reconstruction_raw_manifest_count == 1
+    assert manifest["classification"]["helm_managed_count"] == 3
+    assert manifest["classification"]["raw_k8s_count"] == 0
+    assert manifest["reconstruction"]["raw_manifest_count"] == 1
+    assert not Path(
+        result.run_directory_path,
+        "generated",
+        "persistentvolumeclaim-data-signoz-zookeeper-0.yaml",
+    ).exists()
+    backend_service = generated_manifest["spec"]["rules"][0]["http"]["paths"][0][
+        "backend"
+    ]["service"]
+    assert generated_manifest["metadata"]["name"] == "agent-ai-signoz"
+    assert backend_service["name"] == "agent-ai-signoz"
+    ingress_steps = machine_plan["machine_execution_plan"]["phases"][7]["steps"]
+    assert ingress_steps[0]["manifest_refs"] == ["generated/ingress-agent-ai-signoz.yaml"]
+    assert any(
+        "ingress_backend_service_rewritten:signoz->agent-ai-signoz" in warning
+        for warning in manifest["reconstruction"]["generated_manifests"][0]["warnings"]
+    )
 
 def test_artifact_writer_fails_closed_for_private_chart_hint_without_repo_url(
     tmp_path,

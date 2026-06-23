@@ -169,13 +169,15 @@ def test_phase6_planner_writes_raw_manifests_and_helm_values(tmp_path: Path) -> 
     assert Path(helm_plan.values_file_path).is_file()
     assert "namespace: target-ns" in Path(raw_plan.file_path).read_text(encoding="utf-8")
     assert "clear-text" not in Path(helm_plan.values_file_path).read_text(encoding="utf-8")
+    assert helm_plan.source_release_name == "api"
+    assert helm_plan.release_name == "agent-ai-api"
     assert raw_plan.dry_run_command == (
         "kubectl apply -f generated/configmap-api-config.yaml -n target-ns "
         "--dry-run=server -o yaml"
     )
     assert helm_plan.dry_run_command == (
-        "helm upgrade --install api example/api --namespace target-ns "
-        "--create-namespace -f values/values-api.yaml --dry-run"
+        "helm upgrade --install agent-ai-api example/api --namespace target-ns "
+        "--create-namespace -f values/values-agent-ai-api.yaml --dry-run"
     )
 
 
@@ -252,6 +254,40 @@ def test_phase6_planner_reconstructs_source_ingress_with_agent_generated_name(
     }
     assert "resourceVersion" not in manifest["metadata"]
     assert "ingress_name_prefixed_from:signoz" in raw_plan.warnings
+
+
+def test_phase6_planner_uses_operator_target_release_name_hint(tmp_path: Path) -> None:
+    inventory = NormalizedInventory(
+        source="test",
+        namespace="signoz",
+        snapshot_id="snapshot-1",
+        helm_releases=[
+            InventoryHelmRelease(
+                release_name="signoz",
+                namespace="signoz",
+                chart_name="signoz/signoz",
+                normalized_payload={
+                    "operator_chart_hint": {
+                        "target_release_name": "demo-ai-signoz",
+                    },
+                },
+            )
+        ],
+    )
+    classification = classify_inventory(inventory)
+
+    plan = build_reconstruction_plan(
+        inventory=inventory,
+        classification=classification,
+        target_namespace="agent-testing",
+        generated_dir=tmp_path / "generated",
+        values_dir=tmp_path / "values",
+    )
+
+    helm_plan = plan.helm_releases[0]
+    assert helm_plan.source_release_name == "signoz"
+    assert helm_plan.release_name == "agent-ai-demo-ai-signoz"
+    assert "agent-ai-demo-ai-signoz signoz/signoz" in helm_plan.install_command
 
 
 def test_phase6_planner_reconstructs_helm_managed_source_ingress_with_agent_prefix(

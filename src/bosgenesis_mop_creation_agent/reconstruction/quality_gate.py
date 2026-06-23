@@ -37,7 +37,10 @@ def assert_executable_reconstruction_complete(
         return
 
     details: list[str] = []
-    helm_release_names = {plan.release_name for plan in reconstruction.helm_releases}
+    helm_release_names = {
+        plan.source_release_name or plan.release_name
+        for plan in reconstruction.helm_releases
+    }
     helm_workloads = [
         item
         for item in classification.helm_managed
@@ -52,14 +55,15 @@ def assert_executable_reconstruction_complete(
             details.append(f"{resource_ref}:helm_release_plan_missing:{release_name}")
 
     for plan in reconstruction.helm_releases:
+        release_ref = plan.source_release_name or plan.release_name
         if plan.chart_ref.startswith("<"):
-            details.append(f"HelmRelease/{plan.release_name}:chart_ref_missing")
+            details.append(f"HelmRelease/{release_ref}:chart_ref_missing")
         if plan.chart_source == "private" and not plan.repo_url and not plan.chart_ref.startswith("oci://"):
-            details.append(f"HelmRelease/{plan.release_name}:private_repo_url_required")
+            details.append(f"HelmRelease/{release_ref}:private_repo_url_required")
         if plan.warnings:
             for warning in plan.warnings:
                 if "chart_ref_missing" in warning or "private_repo_url_required" in warning:
-                    details.append(f"HelmRelease/{plan.release_name}:{warning}")
+                    details.append(f"HelmRelease/{release_ref}:{warning}")
 
     if details:
         raise ReconstructionQualityError(
